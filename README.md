@@ -1,5 +1,7 @@
 # MMOServer-Demo
 
+**English** | [简体中文](README_zh.md)
+
 A distributed MMO game-server framework written in Go, built to demonstrate the
 core systems behind a real-time multiplayer world: a custom binary protocol over
 TCP, a fixed-rate tick loop, and **nine-grid Area-of-Interest (AOI)** so each
