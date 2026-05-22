@@ -23,7 +23,7 @@ func Encode(msgType uint16, body []byte) ([]byte, error) {
 	if length > MaxPacketSize {
 		return nil, fmt.Errorf("%w: %d bytes", ErrPacketTooLarge, length)
 	}
-	buf := make([]byte, LengthFieldSize)
+	buf := make([]byte, LengthFieldSize+length)
 	binary.BigEndian.PutUint32(buf[0:LengthFieldSize], uint32(length))
 	binary.BigEndian.PutUint16(buf[LengthFieldSize:LengthFieldSize+TypeFieldSize], msgType)
 	copy(buf[LengthFieldSize+TypeFieldSize:], body)
