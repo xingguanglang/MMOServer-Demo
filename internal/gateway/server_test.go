@@ -10,16 +10,16 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// startTestServer 在随机端口起一个服务器,返回它的地址和一个清理函数。
+// startTestServer 在随机端口起一个服务器,返回它的地址和清理函数。
 func startTestServer(t *testing.T) (addr string, cleanup func()) {
 	t.Helper()
-	// 监听 127.0.0.1:0 —— 端口 0 让系统自动分配一个空闲端口,测试之间不会撞端口。
+	// 端口 0 让系统自动分配空闲端口,测试之间不会撞端口。
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen failed: %v", err)
 	}
 	srv := NewServer()
-	go srv.Serve(ln) // Serve 会阻塞,放到后台 goroutine 跑
+	go srv.Serve(ln) // Serve 阻塞,放后台跑
 	return ln.Addr().String(), func() { ln.Close() }
 }
 
@@ -31,14 +31,13 @@ func dialAndLogin(t *testing.T, addr, username string) (net.Conn, int64) {
 		t.Fatalf("dial failed: %v", err)
 	}
 
-	// 发送登录请求。
 	body, _ := proto.Marshal(&pb.LoginReq{Username: username})
 	packet, _ := protocol.Encode(MsgLoginReq, body)
 	if _, err := conn.Write(packet); err != nil {
 		t.Fatalf("write login failed: %v", err)
 	}
 
-	// 读回登录响应。
+	// 登录响应在 Join 之前发出,所以第一帧一定是 LoginResp。
 	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	msgType, respBody, err := protocol.ReadFrame(conn)
 	if err != nil {
@@ -54,66 +53,139 @@ func dialAndLogin(t *testing.T, addr, username string) (net.Conn, int64) {
 	if !resp.GetSuccess() {
 		t.Fatalf("login not successful: %s", resp.GetMessage())
 	}
-	conn.SetReadDeadline(time.Time{}) // 清除读超时
+	conn.SetReadDeadline(time.Time{})
 	return conn, resp.GetPlayerId()
 }
 
-// TestMoveBroadcast 验证阶段 1 目标:一个玩家移动,另一个玩家能收到广播。
-func TestMoveBroadcast(t *testing.T) {
+// sendMove 让客户端上报一次移动。
+func sendMove(t *testing.T, conn net.Conn, x, y float32) {
+	t.Helper()
+	body, _ := proto.Marshal(&pb.MoveReq{X: x, Y: y})
+	packet, _ := protocol.Encode(MsgMoveReq, body)
+	if _, err := conn.Write(packet); err != nil {
+		t.Fatalf("write move failed: %v", err)
+	}
+}
+
+// readUntil 持续读帧,直到读到 wantType 的消息(返回其 body),或超时失败。
+// 用来跳过途中夹带的其他事件(比如登录时的 PlayerEnter)。
+func readUntil(t *testing.T, conn net.Conn, wantType uint16, timeout time.Duration) []byte {
+	t.Helper()
+	conn.SetReadDeadline(time.Now().Add(timeout))
+	defer conn.SetReadDeadline(time.Time{})
+	for {
+		msgType, body, err := protocol.ReadFrame(conn)
+		if err != nil {
+			t.Fatalf("等待消息类型 %d 时读取失败: %v", wantType, err)
+		}
+		if msgType == wantType {
+			return body
+		}
+	}
+}
+
+// TestPlayerEnterOnLogin:两个玩家在同一格出生,后进的玩家应让先进的收到"进入视野"。
+func TestPlayerEnterOnLogin(t *testing.T) {
 	addr, cleanup := startTestServer(t)
 	defer cleanup()
 
-	// 两个客户端分别连上并登录。
+	connA, _ := dialAndLogin(t, addr, "alice")
+	defer connA.Close()
+	connB, idB := dialAndLogin(t, addr, "bob")
+	defer connB.Close()
+
+	// B 进场后,A 应收到 B 进入视野。
+	body := readUntil(t, connA, MsgPlayerEnter, 2*time.Second)
+	var pe pb.PlayerEnter
+	if err := proto.Unmarshal(body, &pe); err != nil {
+		t.Fatalf("unmarshal PlayerEnter failed: %v", err)
+	}
+	if pe.GetPlayerId() != idB {
+		t.Errorf("A 收到的 PlayerEnter 主体: got %d, want %d (B)", pe.GetPlayerId(), idB)
+	}
+}
+
+// TestMoveBroadcastToNearbyPlayer:同格内的玩家移动,视野内的另一个玩家收到移动广播。
+func TestMoveBroadcastToNearbyPlayer(t *testing.T) {
+	addr, cleanup := startTestServer(t)
+	defer cleanup()
+
 	connA, idA := dialAndLogin(t, addr, "alice")
 	defer connA.Close()
 	connB, _ := dialAndLogin(t, addr, "bob")
 	defer connB.Close()
 
-	// A 发送一次移动。
-	moveBody, _ := proto.Marshal(&pb.MoveReq{X: 12.5, Y: -3.0})
-	movePacket, _ := protocol.Encode(MsgMoveReq, moveBody)
-	if _, err := connA.Write(movePacket); err != nil {
-		t.Fatalf("A write move failed: %v", err)
-	}
+	sendMove(t, connA, 12.5, 20.0) // 仍在 grid0,B 在视野内
 
-	// B 应该收到一条 A 的移动广播。
-	connB.SetReadDeadline(time.Now().Add(2 * time.Second))
-	msgType, body, err := protocol.ReadFrame(connB)
-	if err != nil {
-		t.Fatalf("B read broadcast failed: %v", err)
-	}
-	if msgType != MsgMoveBroadcast {
-		t.Fatalf("expected MsgMoveBroadcast(%d), got %d", MsgMoveBroadcast, msgType)
-	}
-
+	// 跳过 B 登录时收到的 PlayerEnter,直到拿到移动广播。
+	body := readUntil(t, connB, MsgMoveBroadcast, 2*time.Second)
 	var bc pb.MoveBroadcast
 	if err := proto.Unmarshal(body, &bc); err != nil {
-		t.Fatalf("unmarshal broadcast failed: %v", err)
+		t.Fatalf("unmarshal MoveBroadcast failed: %v", err)
 	}
 	if bc.GetPlayerId() != idA {
-		t.Errorf("broadcast playerId: got %d, want %d (A)", bc.GetPlayerId(), idA)
+		t.Errorf("移动广播主体: got %d, want %d (A)", bc.GetPlayerId(), idA)
 	}
-	if bc.GetX() != 12.5 || bc.GetY() != -3.0 {
-		t.Errorf("broadcast coords: got (%v, %v), want (12.5, -3.0)", bc.GetX(), bc.GetY())
+	if bc.GetX() != 12.5 || bc.GetY() != 20.0 {
+		t.Errorf("移动广播坐标: got (%v,%v), want (12.5,20.0)", bc.GetX(), bc.GetY())
 	}
 }
 
-// TestSenderDoesNotReceiveOwnBroadcast 验证:移动广播不会发回给移动者自己。
-func TestSenderDoesNotReceiveOwnBroadcast(t *testing.T) {
+// TestPlayerLeaveOnMoveAway:玩家移动到远处、离开对方视野,对方应收到"离开视野"。
+func TestPlayerLeaveOnMoveAway(t *testing.T) {
+	addr, cleanup := startTestServer(t)
+	defer cleanup()
+
+	connA, idA := dialAndLogin(t, addr, "alice")
+	defer connA.Close()
+	connB, _ := dialAndLogin(t, addr, "bob")
+	defer connB.Close()
+
+	sendMove(t, connA, 200, 200) // 从 grid0 远离到 grid54,离开 B 的视野
+
+	body := readUntil(t, connB, MsgPlayerLeave, 2*time.Second)
+	var pl pb.PlayerLeave
+	if err := proto.Unmarshal(body, &pl); err != nil {
+		t.Fatalf("unmarshal PlayerLeave failed: %v", err)
+	}
+	if pl.GetPlayerId() != idA {
+		t.Errorf("离开视野主体: got %d, want %d (A)", pl.GetPlayerId(), idA)
+	}
+}
+
+// TestPlayerLeaveOnDisconnect:玩家断线,原本能看到它的玩家应收到"离开视野"。
+func TestPlayerLeaveOnDisconnect(t *testing.T) {
+	addr, cleanup := startTestServer(t)
+	defer cleanup()
+
+	connA, idA := dialAndLogin(t, addr, "alice")
+	connB, _ := dialAndLogin(t, addr, "bob")
+	defer connB.Close()
+
+	connA.Close() // A 断线
+
+	body := readUntil(t, connB, MsgPlayerLeave, 2*time.Second)
+	var pl pb.PlayerLeave
+	if err := proto.Unmarshal(body, &pl); err != nil {
+		t.Fatalf("unmarshal PlayerLeave failed: %v", err)
+	}
+	if pl.GetPlayerId() != idA {
+		t.Errorf("断线离开主体: got %d, want %d (A)", pl.GetPlayerId(), idA)
+	}
+}
+
+// TestSoloPlayerNoBroadcast:场上只有自己时移动,不该收到任何广播。
+func TestSoloPlayerNoBroadcast(t *testing.T) {
 	addr, cleanup := startTestServer(t)
 	defer cleanup()
 
 	connA, _ := dialAndLogin(t, addr, "alice")
 	defer connA.Close()
 
-	moveBody, _ := proto.Marshal(&pb.MoveReq{X: 1, Y: 1})
-	movePacket, _ := protocol.Encode(MsgMoveReq, moveBody)
-	connA.Write(movePacket)
+	sendMove(t, connA, 1, 1)
 
-	// A 自己不该收到任何东西,读超时即视为通过。
 	connA.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
-	_, _, err := protocol.ReadFrame(connA)
-	if err == nil {
-		t.Fatal("sender unexpectedly received its own broadcast")
+	if _, _, err := protocol.ReadFrame(connA); err == nil {
+		t.Fatal("场上只有自己,移动不该收到任何消息")
 	}
 }
