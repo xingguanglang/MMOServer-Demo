@@ -15,6 +15,7 @@ enum MsgId {
   MSG_PLAYER_ENTER = 5; // 有玩家进入我的视野
   MSG_PLAYER_LEAVE = 6; // 有玩家离开我的视野
   MSG_STATE_SYNC = 7;   // 10Hz 状态同步快照
+  MSG_SPECTATE = 8;     // 客户端请求以"上帝视角"观战(收全量状态)
 }
 
 // 登录请求:阶段 1 做"最小登录",只带一个用户名,不校验密码。

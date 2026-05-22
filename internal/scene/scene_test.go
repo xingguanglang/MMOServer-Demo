@@ -23,10 +23,11 @@ type recordedView struct {
 // fakeNotifier 是 Notifier 接口的测试替身:不发网络,只把每次调用记下来。
 // 加锁是为了支持"用 Run() 起真 tick goroutine"的那个测试(两个 goroutine 同时读写)。
 type fakeNotifier struct {
-	mu     sync.Mutex
-	syncs  []recordedSync
-	enters []recordedView
-	leaves []recordedView
+	mu       sync.Mutex
+	syncs    []recordedSync
+	enters   []recordedView
+	leaves   []recordedView
+	allSyncs int // SyncAll 被调用的次数
 }
 
 func (f *fakeNotifier) SyncState(observerID int64, states []PlayerState) {
@@ -34,6 +35,12 @@ func (f *fakeNotifier) SyncState(observerID int64, states []PlayerState) {
 	defer f.mu.Unlock()
 	cp := append([]PlayerState(nil), states...) // 复制一份,避免外部切片被复用
 	f.syncs = append(f.syncs, recordedSync{observerID: observerID, states: cp})
+}
+
+func (f *fakeNotifier) SyncAll(states []PlayerState) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.allSyncs++
 }
 
 func (f *fakeNotifier) NotifyEnter(observerID, subjectID int64, x, y float32) {

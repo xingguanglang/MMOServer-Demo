@@ -26,6 +26,8 @@ type Notifier interface {
 	NotifyEnter(observerID, subjectID int64, x, y float32)
 	// NotifyLeave 告诉 observerID:subjectID 离开了它的视野。
 	NotifyLeave(observerID, subjectID int64)
+	// SyncAll 把全场所有玩家的位置快照发出去(上帝视角观战,不过 AOI)。
+	SyncAll(states []PlayerState)
 }
 type inputKind int
 
@@ -97,6 +99,11 @@ func (s *Scene) drainInputs() {
 	}
 }
 func (s *Scene) broadcastState() {
+	all := make([]PlayerState, 0, len(s.players))
+	for _, p := range s.players {
+		all = append(all, PlayerState{ID: p.ID, X: p.X, Y: p.Y})
+	}
+	s.notifier.SyncAll(all)
 	for id, p := range s.players {
 		viewers := s.aoiMgr.ViewPlayers(p.X, p.Y) // 含自己
 		states := make([]PlayerState, 0, len(viewers))

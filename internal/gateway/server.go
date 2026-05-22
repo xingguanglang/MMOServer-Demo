@@ -21,6 +21,7 @@ const (
 	MsgPlayerEnter   uint16 = 5
 	MsgPlayerLeave   uint16 = 6
 	MsgStateSync     uint16 = 7
+	MsgSpectate      uint16 = 8
 )
 
 // 阶段 2 简化:所有玩家统一在原点出生。可视化客户端登录后会立刻发移动把自己散开。
@@ -35,17 +36,19 @@ type Server struct {
 	inbound chan Inbound   // 所有连接收到的消息都汇聚到这里
 	scene   *scene.Scene   // 游戏场景(持有 tick 主循环 + AOI)
 
-	// 连接表。被 accept goroutine、看门狗 goroutine、逻辑/场景 goroutine 共享,用读写锁保护。
-	mu     sync.RWMutex
-	conns  map[uint64]*Conn
-	nextID uint64
+	// 连接表 + 观战者表。被 accept goroutine、看门狗 goroutine、逻辑/场景 goroutine 共享,用读写锁保护。
+	mu         sync.RWMutex
+	conns      map[uint64]*Conn
+	spectators map[uint64]*Conn // 上帝视角观战的连接(收全量状态,不是玩家)
+	nextID     uint64
 }
 
 // NewServer 创建服务器,并把场景挂上(场景以本 Server 作为 Notifier)。
 func NewServer() *Server {
 	s := &Server{
-		inbound: make(chan Inbound, 1024),
-		conns:   make(map[uint64]*Conn),
+		inbound:    make(chan Inbound, 1024),
+		conns:      make(map[uint64]*Conn),
+		spectators: make(map[uint64]*Conn),
 	}
 	aoiMgr := aoi.NewManager(0, 0, 256, 256, 32) // 256x256 地图,32 边长 → 8x8 格
 	s.scene = scene.NewScene(aoiMgr, s, 30, 10)  // s 实现了 scene.Notifier;30Hz tick,10Hz 状态同步
@@ -88,6 +91,7 @@ func (s *Server) addConn(c *Conn) {
 func (s *Server) removeConn(id uint64) {
 	s.mu.Lock()
 	delete(s.conns, id)
+	delete(s.spectators, id)
 	s.mu.Unlock()
 }
 
@@ -111,6 +115,8 @@ func (s *Server) handle(in Inbound) {
 		s.handleLogin(in)
 	case MsgMoveReq:
 		s.handleMove(in)
+	case MsgSpectate:
+		s.handleSpectate(in)
 	default:
 		log.Printf("conn %d: unknown msg type %d", in.Conn.ID(), in.MsgType)
 	}
@@ -144,6 +150,15 @@ func (s *Server) handleMove(in Inbound) {
 	s.scene.Move(int64(in.Conn.ID()), req.GetX(), req.GetY())
 }
 
+// handleSpectate 把一条连接标记为观战者:它不作为玩家进入场景,
+// 而是每个广播 tick 收到全场所有玩家的全量状态(上帝视角)。
+func (s *Server) handleSpectate(in Inbound) {
+	s.mu.Lock()
+	s.spectators[in.Conn.ID()] = in.Conn
+	s.mu.Unlock()
+	log.Printf("conn %d is now a spectator", in.Conn.ID())
+}
+
 // ---- 实现 scene.Notifier:把场景的领域事件翻译成协议消息,发给对应玩家 ----
 
 // SyncState 把某玩家视野内其他玩家的位置快照,编码成 StateSync 发给它(10Hz)。
@@ -153,6 +168,33 @@ func (s *Server) SyncState(observerID int64, states []scene.PlayerState) {
 		players = append(players, &pb.PlayerState{PlayerId: st.ID, X: st.X, Y: st.Y})
 	}
 	s.sendToPlayer(observerID, MsgStateSync, &pb.StateSync{Players: players})
+}
+
+// SyncAll 把全场所有玩家的快照编码成 StateSync,发给所有观战者(上帝视角)。
+func (s *Server) SyncAll(states []scene.PlayerState) {
+	s.mu.RLock()
+	if len(s.spectators) == 0 {
+		s.mu.RUnlock()
+		return // 没人观战,不用编码,直接返回
+	}
+	targets := make([]*Conn, 0, len(s.spectators))
+	for _, c := range s.spectators {
+		targets = append(targets, c)
+	}
+	s.mu.RUnlock()
+
+	players := make([]*pb.PlayerState, 0, len(states))
+	for _, st := range states {
+		players = append(players, &pb.PlayerState{PlayerId: st.ID, X: st.X, Y: st.Y})
+	}
+	packet, err := encodeMessage(MsgStateSync, &pb.StateSync{Players: players})
+	if err != nil {
+		log.Printf("encode error: %v", err)
+		return
+	}
+	for _, c := range targets {
+		c.Send(packet)
+	}
 }
 
 // NotifyEnter 告诉 observer:subject 进入了它的视野(带 subject 的坐标)。

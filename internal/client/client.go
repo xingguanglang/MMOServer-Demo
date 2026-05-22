@@ -22,6 +22,7 @@ const (
 	msgPlayerEnter = uint16(pb.MsgId_MSG_PLAYER_ENTER)
 	msgPlayerLeave = uint16(pb.MsgId_MSG_PLAYER_LEAVE)
 	msgStateSync   = uint16(pb.MsgId_MSG_STATE_SYNC)
+	msgSpectate    = uint16(pb.MsgId_MSG_SPECTATE)
 )
 
 // RemotePlayer 是客户端视野里的一个其他玩家,位置取自服务器最近一次状态同步。
@@ -36,10 +37,11 @@ type Client struct {
 	conn     net.Conn
 	playerID int64
 
-	mu      sync.RWMutex
-	players map[int64]*RemotePlayer
-	selfX   float32
-	selfY   float32
+	mu        sync.RWMutex
+	players   map[int64]*RemotePlayer
+	selfX     float32
+	selfY     float32
+	spectator bool // 观战模式:StateSync 是全量,整体替换玩家表
 
 	recv atomic.Uint64 // 收到的消息帧计数,用于压测统计吞吐
 }
@@ -79,6 +81,20 @@ func (c *Client) Login(username string) error {
 	return nil
 }
 
+// Spectate 把本连接切换为"上帝视角观战":不登录成玩家,而是请求接收全场全量状态。
+// 之后 Run() 收到的 StateSync 会是全量,整体替换本地玩家表。
+func (c *Client) Spectate() error {
+	c.mu.Lock()
+	c.spectator = true
+	c.mu.Unlock()
+	packet, err := protocol.Encode(msgSpectate, nil)
+	if err != nil {
+		return err
+	}
+	_, err = c.conn.Write(packet)
+	return err
+}
+
 // Run 是接收循环:不停读帧、更新本地世界模型。阻塞,通常放在 goroutine 里跑。
 // 连接断开或出错时返回。
 func (c *Client) Run() error {
@@ -111,6 +127,10 @@ func (c *Client) handle(msgType uint16, body []byte) {
 		var m pb.StateSync
 		if proto.Unmarshal(body, &m) == nil {
 			c.mu.Lock()
+			if c.spectator {
+				// 观战:StateSync 是全场全量,整体替换,这样离场的玩家会被自动移除。
+				c.players = make(map[int64]*RemotePlayer, len(m.GetPlayers()))
+			}
 			for _, st := range m.GetPlayers() {
 				p := c.players[st.GetPlayerId()]
 				if p == nil { // 容错:即便漏了 Enter,也按状态同步补上

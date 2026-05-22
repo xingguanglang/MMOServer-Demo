@@ -100,6 +100,54 @@ func TestClientSeesLeaveOnDisconnect(t *testing.T) {
 	}
 }
 
+// TestSpectatorSeesAllPlayers:观战者(上帝视角)应看到全场玩家,即使他们彼此不在 AOI 视野内。
+func TestSpectatorSeesAllPlayers(t *testing.T) {
+	addr, cleanup := startServer(t)
+	defer cleanup()
+
+	a, err := Dial(addr)
+	if err != nil {
+		t.Fatalf("A dial: %v", err)
+	}
+	defer a.Close()
+	if err := a.Login("alice"); err != nil {
+		t.Fatalf("A login: %v", err)
+	}
+	go a.Run()
+
+	b, err := Dial(addr)
+	if err != nil {
+		t.Fatalf("B dial: %v", err)
+	}
+	defer b.Close()
+	if err := b.Login("bob"); err != nil {
+		t.Fatalf("B login: %v", err)
+	}
+	go b.Run()
+
+	// 把两人移到地图对角,确保彼此都不在对方 AOI 视野内。
+	a.Move(10, 10)
+	b.Move(240, 240)
+
+	// 观战者连接。
+	spec, err := Dial(addr)
+	if err != nil {
+		t.Fatalf("spectator dial: %v", err)
+	}
+	defer spec.Close()
+	if err := spec.Spectate(); err != nil {
+		t.Fatalf("spectate: %v", err)
+	}
+	go spec.Run()
+
+	// 观战者应看到全部两个玩家(不过 AOI)。
+	if !waitFor(2*time.Second, func() bool {
+		return hasPlayer(spec, a.PlayerID()) && hasPlayer(spec, b.PlayerID())
+	}) {
+		t.Fatal("观战者应看到全场所有玩家(不受 AOI 限制)")
+	}
+}
+
 func hasPlayer(c *Client, id int64) bool {
 	for _, p := range c.Players() {
 		if p.ID == id {

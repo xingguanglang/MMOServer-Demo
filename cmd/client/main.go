@@ -39,10 +39,20 @@ type Game struct {
 	rendered map[int64]*renderPlayer
 	selfX    float32
 	selfY    float32
+	spectate bool // 观战模式:画全部玩家,不画自己、不响应键盘
 }
 
 // Update 每帧(60fps)调用:处理键盘输入、上报移动、把远程玩家朝目标插值。
 func (g *Game) Update() error {
+	if !g.spectate {
+		g.updateSelf()
+	}
+	g.interpolate()
+	return nil
+}
+
+// updateSelf 读键盘移动自己,并上报服务器。
+func (g *Game) updateSelf() {
 	const dt = float32(1.0 / tps)
 
 	moved := false
@@ -67,8 +77,10 @@ func (g *Game) Update() error {
 	if moved {
 		g.c.Move(g.selfX, g.selfY) // 上报自己的新位置
 	}
+}
 
-	// 把远程玩家朝服务器给的目标位置插值,得到平滑移动。
+// interpolate 把远程玩家朝服务器给的目标位置插值,得到平滑移动。
+func (g *Game) interpolate() {
 	targets := g.c.Players()
 	seen := make(map[int64]bool, len(targets))
 	for _, p := range targets {
@@ -81,13 +93,12 @@ func (g *Game) Update() error {
 		rp.rx += (p.X - rp.rx) * lerpAlpha
 		rp.ry += (p.Y - rp.ry) * lerpAlpha
 	}
-	// 清掉已离开视野的玩家。
+	// 清掉已离开视野 / 离场的玩家。
 	for id := range g.rendered {
 		if !seen[id] {
 			delete(g.rendered, id)
 		}
 	}
-	return nil
 }
 
 // Draw 每帧渲染。
@@ -95,13 +106,17 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	screen.Fill(color.RGBA{20, 20, 30, 255})
 	drawGrid(screen)
 
-	// 远程玩家:灰白色。
+	// 其他玩家:灰白色。
 	for _, rp := range g.rendered {
 		drawPlayer(screen, rp.rx, rp.ry, color.RGBA{210, 210, 210, 255})
 	}
+
+	if g.spectate {
+		ebitenutil.DebugPrint(screen, fmt.Sprintf("SPECTATOR (god view)  players=%d", len(g.rendered)))
+		return
+	}
 	// 自己:绿色。
 	drawPlayer(screen, g.selfX, g.selfY, color.RGBA{90, 220, 90, 255})
-
 	ebitenutil.DebugPrint(screen, fmt.Sprintf(
 		"id=%d  pos=(%.0f,%.0f)  others in view=%d\nWASD / arrows to move",
 		g.c.PlayerID(), g.selfX, g.selfY, len(g.rendered)))
@@ -137,34 +152,46 @@ func clampf(v, lo, hi float32) float32 {
 func main() {
 	addr := flag.String("addr", "127.0.0.1:9000", "server address")
 	name := flag.String("name", "player", "username")
+	spectate := flag.Bool("spectate", false, "god-view spectator: see all players (no AOI)")
 	flag.Parse()
 
 	c, err := client.Dial(*addr)
 	if err != nil {
 		log.Fatalf("connect failed: %v", err)
 	}
-	if err := c.Login(*name); err != nil {
-		log.Fatalf("login failed: %v", err)
+
+	g := &Game{
+		c:        c,
+		rendered: make(map[int64]*renderPlayer),
+		spectate: *spectate,
 	}
+
+	if *spectate {
+		if err := c.Spectate(); err != nil {
+			log.Fatalf("spectate failed: %v", err)
+		}
+	} else {
+		if err := c.Login(*name); err != nil {
+			log.Fatalf("login failed: %v", err)
+		}
+		// 随机一个出生点并上报,避免多个客户端都堆在原点。
+		g.selfX = float32(32 + rand.Intn(mapSize-64))
+		g.selfY = float32(32 + rand.Intn(mapSize-64))
+		c.Move(g.selfX, g.selfY)
+	}
+
 	go func() {
 		if err := c.Run(); err != nil {
 			log.Printf("disconnected: %v", err)
 		}
 	}()
 
-	// 随机一个出生点并上报,避免多个客户端都堆在原点。
-	startX := float32(32 + rand.Intn(mapSize-64))
-	startY := float32(32 + rand.Intn(mapSize-64))
-	c.Move(startX, startY)
-
-	g := &Game{
-		c:        c,
-		rendered: make(map[int64]*renderPlayer),
-		selfX:    startX,
-		selfY:    startY,
+	title := "MMOServer-Demo - " + *name
+	if *spectate {
+		title = "MMOServer-Demo - SPECTATOR"
 	}
 	ebiten.SetWindowSize(screenSize, screenSize)
-	ebiten.SetWindowTitle("MMOServer-Demo - " + *name)
+	ebiten.SetWindowTitle(title)
 	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
 	}
