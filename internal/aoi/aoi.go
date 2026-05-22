@@ -130,5 +130,4 @@ func (m *Manager) Move(playerID int64, oldX, oldY, newX, newY float32) (entered,
 		}
 	}
 	return entered, left
-	return entered, left
 }
