@@ -7,9 +7,9 @@ core systems behind a real-time multiplayer world: a custom binary protocol over
 TCP, a fixed-rate tick loop, and **nine-grid Area-of-Interest (AOI)** so each
 player only syncs with others nearby instead of the whole map.
 
-> Status: phases 1–2 complete (protocol, gateway, AOI, tick loop, end-to-end
-> enter/leave). Visualization client, load testing, and the distributed split
-> are on the roadmap below.
+> Status: phases 1–3 complete (protocol, gateway, AOI, tick loop, end-to-end
+> enter/leave, 10 Hz state sync, and an ebiten visualization client). Load
+> testing and the distributed split are on the roadmap below.
 
 ## Highlights
 
@@ -23,8 +23,11 @@ player only syncs with others nearby instead of the whole map.
   locks.
 - **Nine-grid AOI**: O(nearby) interest management with mutual enter/leave view
   events, instead of O(n²) broadcast-to-everyone.
-- **Tested**: unit tests for the codec and AOI, plus end-to-end gateway
-  integration tests over real TCP connections.
+- **10 Hz state sync + client interpolation**: the server broadcasts AOI-filtered
+  position snapshots at 10 Hz, decoupled from the 30 Hz logic tick; the ebiten
+  client interpolates them to smooth 60 fps movement.
+- **Tested**: unit tests for the codec and AOI, plus end-to-end gateway and
+  client integration tests over real TCP connections.
 
 ## Architecture
 
@@ -80,10 +83,12 @@ allocation.
 
 ```
 cmd/server/         server entry point
+cmd/client/         ebiten visualization client
 internal/protocol/  frame codec (+ tests)
 internal/gateway/   connection mgmt, routing, Notifier impl (+ integration tests)
 internal/aoi/       nine-grid AOI manager (+ tests)
 internal/scene/     tick loop + scene orchestration (+ tests)
+internal/client/    reusable network-layer client + world model (+ tests)
 pkg/pb/             generated protobuf code
 proto/              protobuf source (game.proto)
 ```
@@ -96,6 +101,10 @@ Prerequisites: Go 1.26+.
 # Run the server (listens on :9000)
 go run ./cmd/server
 
+# In separate terminals, run two visualization clients
+go run ./cmd/client -name alice
+go run ./cmd/client -name bob
+
 # Run all tests
 go test ./...
 
@@ -103,9 +112,11 @@ go test ./...
 go vet ./...
 ```
 
-There is no visual client yet (see the roadmap); the end-to-end behavior
-"walk closer → a player appears, walk away → it disappears" is exercised by the
-gateway integration tests in `internal/gateway/server_test.go`.
+Move with WASD / arrow keys. As one client moves near another it appears in the
+other's window; cross out of the AOI grid cell and it disappears. Movement stays
+smooth because the 10 Hz server snapshots are interpolated to 60 fps. The same
+behavior is also exercised headlessly by the integration tests in
+`internal/gateway/server_test.go` and `internal/client/client_test.go`.
 
 ### Regenerating Protobuf code
 
@@ -121,12 +132,14 @@ protoc --go_out=. --go_opt=module=github.com/xingguanglang/MMOServer-Demo proto/
 
 - [Nine-grid AOI](docs/design-aoi.md) — why grid AOI, cell-size selection,
   enter/leave algorithm, alternatives, and pitfalls.
+- [State sync](docs/design-sync.md) — state sync vs. frame sync, the 10 Hz / 30 Hz
+  split, client-side interpolation, and how AOI bounds bandwidth.
 
 ## Roadmap
 
 - [x] **Phase 1** — project skeleton, binary protocol, gateway send/recv, minimal login
 - [x] **Phase 2** — scene tick loop, nine-grid AOI, enter/leave view events, end-to-end sync
-- [ ] **Phase 3** — 10 Hz state-sync broadcast + ebiten visualization client (record AOI GIF)
+- [x] **Phase 3** — 10 Hz state-sync broadcast + ebiten visualization client
 - [ ] **Phase 4** — load-testing bots (1–2k virtual players) + performance data
 - [ ] **Phase 5** — distributed split (gateway / scene / battle), gRPC, Redis + MySQL
 - [ ] **Phase 6** — Docker Compose, GitHub Actions CI, full docs

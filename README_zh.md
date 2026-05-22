@@ -6,8 +6,8 @@
 基于 TCP 的自定义二进制协议、固定频率的 tick 主循环,以及**九宫格 AOI(兴趣区域)**——
 让每个玩家只与附近的玩家同步,而不是整张地图的所有人。
 
-> 状态:阶段 1–2 已完成(协议、网关、AOI、tick 主循环、端到端进/出视野)。
-> 可视化客户端、压力测试和分布式拆分见下方路线图。
+> 状态:阶段 1–3 已完成(协议、网关、AOI、tick 主循环、端到端进/出视野、
+> 10Hz 状态同步,以及 ebiten 可视化客户端)。压力测试和分布式拆分见下方路线图。
 
 ## 亮点
 
@@ -19,7 +19,9 @@
   游戏状态只被一个 goroutine 修改,因此无需加锁。
 - **九宫格 AOI**:O(附近人数) 的兴趣管理 + 相互的进/出视野事件,
   取代 O(n²) 的"广播给所有人"。
-- **有测试**:协议编解码与 AOI 的单元测试,以及基于真实 TCP 连接的网关端到端集成测试。
+- **10Hz 状态同步 + 客户端插值**:服务器按 10Hz 广播经 AOI 过滤的位置快照,
+  与 30Hz 逻辑 tick 解耦;ebiten 客户端把快照插值成 60fps 的平滑移动。
+- **有测试**:协议编解码与 AOI 的单元测试,以及基于真实 TCP 连接的网关、客户端端到端集成测试。
 
 ## 架构
 
@@ -72,10 +74,12 @@
 
 ```
 cmd/server/         服务器入口
+cmd/client/         ebiten 可视化客户端
 internal/protocol/  帧编解码(含测试)
 internal/gateway/   连接管理、路由、Notifier 实现(含集成测试)
 internal/aoi/       九宫格 AOI 管理器(含测试)
 internal/scene/     tick 主循环 + 场景编排(含测试)
+internal/client/    可复用的客户端网络层 + 世界模型(含测试)
 pkg/pb/             protobuf 生成代码
 proto/              protobuf 源文件(game.proto)
 ```
@@ -88,6 +92,10 @@ proto/              protobuf 源文件(game.proto)
 # 启动服务器(监听 :9000)
 go run ./cmd/server
 
+# 在另外的终端里运行两个可视化客户端
+go run ./cmd/client -name alice
+go run ./cmd/client -name bob
+
 # 运行所有测试
 go test ./...
 
@@ -95,8 +103,9 @@ go test ./...
 go vet ./...
 ```
 
-目前还没有可视化客户端(见路线图);端到端行为"走近 → 出现一个玩家,走远 → 它消失"
-由 `internal/gateway/server_test.go` 的网关集成测试来验证。
+用 WASD / 方向键移动。一个客户端走近另一个时会出现在对方窗口里,走出 AOI 格子就消失。
+移动之所以平滑,是因为 10Hz 的服务器快照被插值成了 60fps。同样的行为也由
+`internal/gateway/server_test.go` 和 `internal/client/client_test.go` 的集成测试无头验证。
 
 ### 重新生成 Protobuf 代码
 
@@ -112,12 +121,14 @@ protoc --go_out=. --go_opt=module=github.com/xingguanglang/MMOServer-Demo proto/
 
 - [九宫格 AOI](docs/design-aoi.md) — 为什么用网格 AOI、格子大小选型、进/出视野算法、
   替代方案与踩坑记录。
+- [状态同步](docs/design-sync.md) — 状态同步 vs 帧同步、10Hz / 30Hz 拆分、
+  客户端插值,以及 AOI 如何限制带宽。
 
 ## 路线图
 
 - [x] **阶段 1** — 项目骨架、二进制协议、网关收发、最小登录
 - [x] **阶段 2** — 场景 tick 主循环、九宫格 AOI、进/出视野事件、端到端同步
-- [ ] **阶段 3** — 10 Hz 状态同步广播 + ebiten 可视化客户端(录制 AOI GIF)
+- [x] **阶段 3** — 10 Hz 状态同步广播 + ebiten 可视化客户端
 - [ ] **阶段 4** — 压测机器人(1–2k 虚拟玩家)+ 性能数据
 - [ ] **阶段 5** — 分布式拆分(网关 / 场景 / 战斗)、gRPC、Redis + MySQL
 - [ ] **阶段 6** — Docker Compose、GitHub Actions CI、完整文档
