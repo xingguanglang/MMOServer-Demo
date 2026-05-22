@@ -1,0 +1,15 @@
+# Build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries / coverage
+*.test
+*.out
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
