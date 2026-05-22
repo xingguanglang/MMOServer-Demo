@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/xingguanglang/MMOServer-Demo/internal/protocol"
 	"github.com/xingguanglang/MMOServer-Demo/pkg/pb"
@@ -39,6 +40,8 @@ type Client struct {
 	players map[int64]*RemotePlayer
 	selfX   float32
 	selfY   float32
+
+	recv atomic.Uint64 // 收到的消息帧计数,用于压测统计吞吐
 }
 
 // Dial 连接服务器。
@@ -84,9 +87,13 @@ func (c *Client) Run() error {
 		if err != nil {
 			return err
 		}
+		c.recv.Add(1)
 		c.handle(msgType, body)
 	}
 }
+
+// ReceivedCount 返回累计收到的消息帧数(并发安全)。
+func (c *Client) ReceivedCount() uint64 { return c.recv.Load() }
 
 func (c *Client) handle(msgType uint16, body []byte) {
 	switch msgType {
