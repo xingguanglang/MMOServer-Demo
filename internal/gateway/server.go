@@ -20,6 +20,7 @@ const (
 	MsgMoveBroadcast uint16 = 4
 	MsgPlayerEnter   uint16 = 5
 	MsgPlayerLeave   uint16 = 6
+	MsgStateSync     uint16 = 7
 )
 
 // 阶段 2 简化:所有玩家统一在原点出生。可视化客户端登录后会立刻发移动把自己散开。
@@ -47,7 +48,7 @@ func NewServer() *Server {
 		conns:   make(map[uint64]*Conn),
 	}
 	aoiMgr := aoi.NewManager(0, 0, 256, 256, 32) // 256x256 地图,32 边长 → 8x8 格
-	s.scene = scene.NewScene(aoiMgr, s, 30)      // s 实现了 scene.Notifier,30Hz tick
+	s.scene = scene.NewScene(aoiMgr, s, 30, 10)  // s 实现了 scene.Notifier;30Hz tick,10Hz 状态同步
 	return s
 }
 
@@ -145,18 +146,13 @@ func (s *Server) handleMove(in Inbound) {
 
 // ---- 实现 scene.Notifier:把场景的领域事件翻译成协议消息,发给对应玩家 ----
 
-// BroadcastMove 把某玩家的新位置发给视野内的观察者们(只编码一次,逐个发)。
-func (s *Server) BroadcastMove(viewerIDs []int64, moverID int64, x, y float32) {
-	packet, err := encodeMessage(MsgMoveBroadcast, &pb.MoveBroadcast{PlayerId: moverID, X: x, Y: y})
-	if err != nil {
-		log.Printf("encode error: %v", err)
-		return
+// SyncState 把某玩家视野内其他玩家的位置快照,编码成 StateSync 发给它(10Hz)。
+func (s *Server) SyncState(observerID int64, states []scene.PlayerState) {
+	players := make([]*pb.PlayerState, 0, len(states))
+	for _, st := range states {
+		players = append(players, &pb.PlayerState{PlayerId: st.ID, X: st.X, Y: st.Y})
 	}
-	for _, vid := range viewerIDs {
-		if c := s.connByPlayer(vid); c != nil {
-			c.Send(packet)
-		}
-	}
+	s.sendToPlayer(observerID, MsgStateSync, &pb.StateSync{Players: players})
 }
 
 // NotifyEnter 告诉 observer:subject 进入了它的视野(带 subject 的坐标)。

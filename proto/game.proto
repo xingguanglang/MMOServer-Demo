@@ -14,6 +14,7 @@ enum MsgId {
   MSG_MOVE_BROADCAST = 4;
   MSG_PLAYER_ENTER = 5; // 有玩家进入我的视野
   MSG_PLAYER_LEAVE = 6; // 有玩家离开我的视野
+  MSG_STATE_SYNC = 7;   // 10Hz 状态同步快照
 }
 
 // 登录请求:阶段 1 做"最小登录",只带一个用户名,不校验密码。
@@ -51,4 +52,16 @@ message PlayerEnter {
 // 离开视野:有一个玩家离开了我的视野,客户端据此把它移除。
 message PlayerLeave {
   int64 player_id = 1;
+}
+
+// 状态快照里的单个玩家状态。
+message PlayerState {
+  int64 player_id = 1;
+  float x = 2;
+  float y = 3;
+}
+
+// 状态同步:把观察者视野内其他玩家的位置打包成一份快照,10Hz 广播。
+message StateSync {
+  repeated PlayerState players = 1;
 }

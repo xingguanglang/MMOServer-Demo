@@ -11,12 +11,18 @@ type Player struct {
 	X, Y float32
 }
 
+type PlayerState struct {
+	ID   int64
+	X, Y float32
+}
+
 // Notifier 是场景对外发通知的出口。场景本身不碰网络/协议,
 // 只通过这个接口告诉上层"该把什么发给谁",由网关去编码、走 socket。
 // 好处:场景能脱离网络单独做单元测试(传一个假 Notifier 记录调用即可)。
 type Notifier interface {
-	// BroadcastMove 把 moverID 的新位置 (x,y) 发给 viewerIDs 这些观察者。
-	BroadcastMove(viewerIDs []int64, moverID int64, x, y float32)
+	// SyncState 把 observerID 视野内其他玩家的位置快照发给它(10Hz 状态同步)。
+	SyncState(observerID int64, states []PlayerState)
+	// NotifyEnter 告诉 observerID:subjectID 进入了它的视野(带坐标)。
 	NotifyEnter(observerID, subjectID int64, x, y float32)
 	// NotifyLeave 告诉 observerID:subjectID 离开了它的视野。
 	NotifyLeave(observerID, subjectID int64)
@@ -40,15 +46,19 @@ type Scene struct {
 	inCh     chan input
 	tickRate time.Duration
 	notifier Notifier
+
+	tickCount int // tick 计数器
+	syncEvery int // 每隔多少 tick 广播一次状态(30Hz tick / 10Hz sync = 3)
 }
 
-func NewScene(aoiMgr *aoi.Manager, notifier Notifier, tickHz int) *Scene {
+func NewScene(aoiMgr *aoi.Manager, notifier Notifier, tickHz int, syncHz int) *Scene {
 	return &Scene{
-		aoiMgr:   aoiMgr,
-		players:  make(map[int64]*Player),
-		inCh:     make(chan input, 1024),
-		tickRate: time.Second / time.Duration(tickHz),
-		notifier: notifier,
+		aoiMgr:    aoiMgr,
+		players:   make(map[int64]*Player),
+		inCh:      make(chan input, 1024),
+		tickRate:  time.Second / time.Duration(tickHz),
+		notifier:  notifier,
+		syncEvery: tickHz / syncHz, // 30Hz tick / 10Hz sync = 3
 	}
 }
 func (s *Scene) Join(playerID int64, x, y float32) {
@@ -70,12 +80,36 @@ func (s *Scene) Run() {
 	}
 }
 func (s *Scene) tick() {
+	s.drainInputs()
+	s.tickCount++
+	if s.tickCount%s.syncEvery == 0 {
+		s.broadcastState()
+	}
+}
+func (s *Scene) drainInputs() {
 	for {
 		select {
 		case in := <-s.inCh:
 			s.apply(in)
 		default:
-			return // 通道里暂时没有更多输入了,这一帧结束
+			return
+		}
+	}
+}
+func (s *Scene) broadcastState() {
+	for id, p := range s.players {
+		viewers := s.aoiMgr.ViewPlayers(p.X, p.Y) // 含自己
+		states := make([]PlayerState, 0, len(viewers))
+		for _, vid := range viewers {
+			if vid == id {
+				continue // 不把自己发给自己
+			}
+			if other := s.players[vid]; other != nil {
+				states = append(states, PlayerState{ID: other.ID, X: other.X, Y: other.Y})
+			}
+		}
+		if len(states) > 0 {
+			s.notifier.SyncState(id, states)
 		}
 	}
 }
@@ -140,14 +174,5 @@ func (s *Scene) handleMove(in input) {
 		s.notifier.NotifyLeave(p.ID, otherID)
 		s.notifier.NotifyLeave(otherID, p.ID)
 	}
-
-	// 把移动广播给当前视野内的其他玩家。
-	viewers := s.aoiMgr.ViewPlayers(p.X, p.Y)
-	others := make([]int64, 0, len(viewers))
-	for _, id := range viewers {
-		if id != p.ID {
-			others = append(others, id)
-		}
-	}
-	s.notifier.BroadcastMove(others, p.ID, p.X, p.Y)
+	// 位置变化由 10Hz 状态同步广播,这里不再逐次广播。
 }

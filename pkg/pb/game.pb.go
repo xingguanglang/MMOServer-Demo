@@ -32,6 +32,7 @@ const (
 	MsgId_MSG_MOVE_BROADCAST MsgId = 4
 	MsgId_MSG_PLAYER_ENTER   MsgId = 5 // 有玩家进入我的视野
 	MsgId_MSG_PLAYER_LEAVE   MsgId = 6 // 有玩家离开我的视野
+	MsgId_MSG_STATE_SYNC     MsgId = 7 // 10Hz 状态同步快照
 )
 
 // Enum value maps for MsgId.
@@ -44,6 +45,7 @@ var (
 		4: "MSG_MOVE_BROADCAST",
 		5: "MSG_PLAYER_ENTER",
 		6: "MSG_PLAYER_LEAVE",
+		7: "MSG_STATE_SYNC",
 	}
 	MsgId_value = map[string]int32{
 		"MSG_UNKNOWN":        0,
@@ -53,6 +55,7 @@ var (
 		"MSG_MOVE_BROADCAST": 4,
 		"MSG_PLAYER_ENTER":   5,
 		"MSG_PLAYER_LEAVE":   6,
+		"MSG_STATE_SYNC":     7,
 	}
 )
 
@@ -409,6 +412,112 @@ func (x *PlayerLeave) GetPlayerId() int64 {
 	return 0
 }
 
+// 状态快照里的单个玩家状态。
+type PlayerState struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PlayerId      int64                  `protobuf:"varint,1,opt,name=player_id,json=playerId,proto3" json:"player_id,omitempty"`
+	X             float32                `protobuf:"fixed32,2,opt,name=x,proto3" json:"x,omitempty"`
+	Y             float32                `protobuf:"fixed32,3,opt,name=y,proto3" json:"y,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlayerState) Reset() {
+	*x = PlayerState{}
+	mi := &file_proto_game_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlayerState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlayerState) ProtoMessage() {}
+
+func (x *PlayerState) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_game_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlayerState.ProtoReflect.Descriptor instead.
+func (*PlayerState) Descriptor() ([]byte, []int) {
+	return file_proto_game_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *PlayerState) GetPlayerId() int64 {
+	if x != nil {
+		return x.PlayerId
+	}
+	return 0
+}
+
+func (x *PlayerState) GetX() float32 {
+	if x != nil {
+		return x.X
+	}
+	return 0
+}
+
+func (x *PlayerState) GetY() float32 {
+	if x != nil {
+		return x.Y
+	}
+	return 0
+}
+
+// 状态同步:把观察者视野内其他玩家的位置打包成一份快照,10Hz 广播。
+type StateSync struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Players       []*PlayerState         `protobuf:"bytes,1,rep,name=players,proto3" json:"players,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StateSync) Reset() {
+	*x = StateSync{}
+	mi := &file_proto_game_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StateSync) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StateSync) ProtoMessage() {}
+
+func (x *StateSync) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_game_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StateSync.ProtoReflect.Descriptor instead.
+func (*StateSync) Descriptor() ([]byte, []int) {
+	return file_proto_game_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *StateSync) GetPlayers() []*PlayerState {
+	if x != nil {
+		return x.Players
+	}
+	return nil
+}
+
 var File_proto_game_proto protoreflect.FileDescriptor
 
 const file_proto_game_proto_rawDesc = "" +
@@ -432,7 +541,13 @@ const file_proto_game_proto_rawDesc = "" +
 	"\x01x\x18\x02 \x01(\x02R\x01x\x12\f\n" +
 	"\x01y\x18\x03 \x01(\x02R\x01y\"*\n" +
 	"\vPlayerLeave\x12\x1b\n" +
-	"\tplayer_id\x18\x01 \x01(\x03R\bplayerId*\x95\x01\n" +
+	"\tplayer_id\x18\x01 \x01(\x03R\bplayerId\"F\n" +
+	"\vPlayerState\x12\x1b\n" +
+	"\tplayer_id\x18\x01 \x01(\x03R\bplayerId\x12\f\n" +
+	"\x01x\x18\x02 \x01(\x02R\x01x\x12\f\n" +
+	"\x01y\x18\x03 \x01(\x02R\x01y\"8\n" +
+	"\tStateSync\x12+\n" +
+	"\aplayers\x18\x01 \x03(\v2\x11.game.PlayerStateR\aplayers*\xa9\x01\n" +
 	"\x05MsgId\x12\x0f\n" +
 	"\vMSG_UNKNOWN\x10\x00\x12\x11\n" +
 	"\rMSG_LOGIN_REQ\x10\x01\x12\x12\n" +
@@ -440,7 +555,8 @@ const file_proto_game_proto_rawDesc = "" +
 	"\fMSG_MOVE_REQ\x10\x03\x12\x16\n" +
 	"\x12MSG_MOVE_BROADCAST\x10\x04\x12\x14\n" +
 	"\x10MSG_PLAYER_ENTER\x10\x05\x12\x14\n" +
-	"\x10MSG_PLAYER_LEAVE\x10\x06B0Z.github.com/xingguanglang/MMOServer-Demo/pkg/pbb\x06proto3"
+	"\x10MSG_PLAYER_LEAVE\x10\x06\x12\x12\n" +
+	"\x0eMSG_STATE_SYNC\x10\aB0Z.github.com/xingguanglang/MMOServer-Demo/pkg/pbb\x06proto3"
 
 var (
 	file_proto_game_proto_rawDescOnce sync.Once
@@ -455,7 +571,7 @@ func file_proto_game_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_game_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_game_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_proto_game_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_proto_game_proto_goTypes = []any{
 	(MsgId)(0),            // 0: game.MsgId
 	(*LoginReq)(nil),      // 1: game.LoginReq
@@ -464,13 +580,16 @@ var file_proto_game_proto_goTypes = []any{
 	(*MoveBroadcast)(nil), // 4: game.MoveBroadcast
 	(*PlayerEnter)(nil),   // 5: game.PlayerEnter
 	(*PlayerLeave)(nil),   // 6: game.PlayerLeave
+	(*PlayerState)(nil),   // 7: game.PlayerState
+	(*StateSync)(nil),     // 8: game.StateSync
 }
 var file_proto_game_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	7, // 0: game.StateSync.players:type_name -> game.PlayerState
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_proto_game_proto_init() }
@@ -484,7 +603,7 @@ func file_proto_game_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_game_proto_rawDesc), len(file_proto_game_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

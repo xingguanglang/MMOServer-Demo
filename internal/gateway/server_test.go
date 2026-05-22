@@ -105,8 +105,9 @@ func TestPlayerEnterOnLogin(t *testing.T) {
 	}
 }
 
-// TestMoveBroadcastToNearbyPlayer:同格内的玩家移动,视野内的另一个玩家收到移动广播。
-func TestMoveBroadcastToNearbyPlayer(t *testing.T) {
+// TestStateSyncToNearbyPlayer:同格内的玩家移动后,视野内的另一个玩家会在 10Hz 状态同步里
+// 看到它的新坐标。
+func TestStateSyncToNearbyPlayer(t *testing.T) {
 	addr, cleanup := startTestServer(t)
 	defer cleanup()
 
@@ -117,17 +118,26 @@ func TestMoveBroadcastToNearbyPlayer(t *testing.T) {
 
 	sendMove(t, connA, 12.5, 20.0) // 仍在 grid0,B 在视野内
 
-	// 跳过 B 登录时收到的 PlayerEnter,直到拿到移动广播。
-	body := readUntil(t, connB, MsgMoveBroadcast, 2*time.Second)
-	var bc pb.MoveBroadcast
-	if err := proto.Unmarshal(body, &bc); err != nil {
-		t.Fatalf("unmarshal MoveBroadcast failed: %v", err)
-	}
-	if bc.GetPlayerId() != idA {
-		t.Errorf("移动广播主体: got %d, want %d (A)", bc.GetPlayerId(), idA)
-	}
-	if bc.GetX() != 12.5 || bc.GetY() != 20.0 {
-		t.Errorf("移动广播坐标: got (%v,%v), want (12.5,20.0)", bc.GetX(), bc.GetY())
+	// 持续读 StateSync,直到看到 A 出现在新坐标(B 视野内会周期性收到 A 的状态)。
+	connB.SetReadDeadline(time.Now().Add(2 * time.Second))
+	defer connB.SetReadDeadline(time.Time{})
+	for {
+		msgType, body, err := protocol.ReadFrame(connB)
+		if err != nil {
+			t.Fatalf("等待含 A 新坐标的 StateSync 超时: %v", err)
+		}
+		if msgType != MsgStateSync {
+			continue // 跳过登录时的 PlayerEnter 等其他消息
+		}
+		var ss pb.StateSync
+		if err := proto.Unmarshal(body, &ss); err != nil {
+			t.Fatalf("unmarshal StateSync failed: %v", err)
+		}
+		for _, st := range ss.GetPlayers() {
+			if st.GetPlayerId() == idA && st.GetX() == 12.5 && st.GetY() == 20.0 {
+				return // 找到 A 的新坐标,通过
+			}
+		}
 	}
 }
 
