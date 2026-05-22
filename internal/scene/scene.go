@@ -17,6 +17,9 @@ type Player struct {
 type Notifier interface {
 	// BroadcastMove 把 moverID 的新位置 (x,y) 发给 viewerIDs 这些观察者。
 	BroadcastMove(viewerIDs []int64, moverID int64, x, y float32)
+	NotifyEnter(observerID, subjectID int64, x, y float32)
+	// NotifyLeave 告诉 observerID:subjectID 离开了它的视野。
+	NotifyLeave(observerID, subjectID int64)
 }
 type inputKind int
 
@@ -88,34 +91,61 @@ func (s *Scene) apply(in input) {
 }
 func (s *Scene) handleJoin(in input) {
 	p := &Player{ID: in.playerID, X: in.x, Y: in.y}
+	// Enter 返回进场时视野内"已经在场"的其他玩家。
+	inView := s.aoiMgr.Enter(p.ID, p.X, p.Y)
 	s.players[p.ID] = p
-	s.aoiMgr.Enter(p.ID, p.X, p.Y)
-	// (进入视野的通知留到下一步,需要新增 proto 消息)
+
+	for _, otherID := range inView {
+		other := s.players[otherID]
+		if other == nil {
+			continue
+		}
+		// 视野相互:新玩家看到已有玩家,已有玩家也看到新玩家。
+		s.notifier.NotifyEnter(p.ID, other.ID, other.X, other.Y)
+		s.notifier.NotifyEnter(other.ID, p.ID, p.X, p.Y)
+	}
 }
 func (s *Scene) handleLeave(in input) {
 	p := s.players[in.playerID]
 	if p == nil {
 		return
 	}
-	s.aoiMgr.Leave(p.ID, p.X, p.Y)
+	wasInView := s.aoiMgr.Leave(p.ID, p.X, p.Y)
 	delete(s.players, p.ID)
+	for _, otherID := range wasInView {
+		s.notifier.NotifyLeave(otherID, p.ID)
+	} // 告诉他们:p 消失了
 	// (离开视野的通知留到下一步)
 }
 
 func (s *Scene) handleMove(in input) {
 	p := s.players[in.playerID]
 	if p == nil {
-		return // 玩家不存在(可能已离场),忽略
+		return
 	}
 	oldX, oldY := p.X, p.Y
 	p.X, p.Y = in.x, in.y
-	s.aoiMgr.Move(p.ID, oldX, oldY, p.X, p.Y) // 进/出视野的处理下一步补上
 
-	// 关键:移动只广播给"当前视野内"的其他玩家,而不是全场 —— 这就是 AOI 的收益。
+	// 跨格才有进/出视野变化;同格移动 entered/left 都为空。
+	entered, left := s.aoiMgr.Move(p.ID, oldX, oldY, p.X, p.Y)
+	for _, otherID := range entered {
+		other := s.players[otherID]
+		if other == nil {
+			continue
+		}
+		s.notifier.NotifyEnter(p.ID, other.ID, other.X, other.Y)
+		s.notifier.NotifyEnter(other.ID, p.ID, p.X, p.Y)
+	}
+	for _, otherID := range left {
+		s.notifier.NotifyLeave(p.ID, otherID)
+		s.notifier.NotifyLeave(otherID, p.ID)
+	}
+
+	// 把移动广播给当前视野内的其他玩家。
 	viewers := s.aoiMgr.ViewPlayers(p.X, p.Y)
 	others := make([]int64, 0, len(viewers))
 	for _, id := range viewers {
-		if id != p.ID { // 排除自己
+		if id != p.ID {
 			others = append(others, id)
 		}
 	}
