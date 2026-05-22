@@ -1,0 +1,145 @@
+package scene
+
+import (
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/xingguanglang/MMOServer-Demo/internal/aoi"
+)
+
+// recordedMove 记录一次 BroadcastMove 调用的内容,供断言。
+type recordedMove struct {
+	viewers []int64
+	moverID int64
+	x, y    float32
+}
+
+// fakeNotifier 是 Notifier 接口的测试替身:不发网络,只把每次调用记下来。
+// 加锁是为了支持"用 Run() 起真 tick goroutine"的那个测试(两个 goroutine 会同时读写)。
+type fakeNotifier struct {
+	mu    sync.Mutex
+	moves []recordedMove
+}
+
+func (f *fakeNotifier) BroadcastMove(viewerIDs []int64, moverID int64, x, y float32) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	vs := append([]int64(nil), viewerIDs...) // 复制一份,避免外部切片被复用导致数据被改
+	f.moves = append(f.moves, recordedMove{viewers: vs, moverID: moverID, x: x, y: y})
+}
+
+func (f *fakeNotifier) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.moves)
+}
+
+func (f *fakeNotifier) last() recordedMove {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.moves[len(f.moves)-1]
+}
+
+func newTestScene(fake *fakeNotifier) *Scene {
+	mgr := aoi.NewManager(0, 0, 256, 256, 32) // 8x8 格
+	return NewScene(mgr, fake, 30)
+}
+
+// sameSet 断言切片是同一个集合(忽略顺序)。
+func sameSet(t *testing.T, name string, got []int64, want ...int64) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s: 集合大小不符 got=%v want=%v", name, got, want)
+	}
+	set := make(map[int64]bool, len(got))
+	for _, id := range got {
+		set[id] = true
+	}
+	for _, id := range want {
+		if !set[id] {
+			t.Fatalf("%s: 缺少 %d, got=%v want=%v", name, id, got, want)
+		}
+	}
+}
+
+// TestMoveBroadcastsToViewersOnly:移动只广播给视野内的其他玩家,远处的和自己都排除。
+func TestMoveBroadcastsToViewersOnly(t *testing.T) {
+	fake := &fakeNotifier{}
+	s := newTestScene(fake)
+
+	// 三个玩家进场:1、2 在同一格附近,3 在远处。
+	s.Join(1, 10, 10)
+	s.Join(2, 20, 20)
+	s.Join(3, 200, 200)
+	s.tick() // 直接同步驱动一帧,处理上面三个 join
+
+	// 玩家 1 移动一下。
+	s.Move(1, 15, 15)
+	s.tick()
+
+	if fake.count() != 1 {
+		t.Fatalf("期望 1 次广播, got %d", fake.count())
+	}
+	mv := fake.last()
+	if mv.moverID != 1 {
+		t.Errorf("moverID got %d want 1", mv.moverID)
+	}
+	if mv.x != 15 || mv.y != 15 {
+		t.Errorf("coords got (%v,%v) want (15,15)", mv.x, mv.y)
+	}
+	// 视野内只该有玩家 2;玩家 3 太远、玩家 1 是自己,都不在。
+	sameSet(t, "viewers", mv.viewers, 2)
+}
+
+// TestMoveUnknownPlayerIgnored:没进场过的玩家发来移动,应被忽略、不产生广播。
+func TestMoveUnknownPlayerIgnored(t *testing.T) {
+	fake := &fakeNotifier{}
+	s := newTestScene(fake)
+
+	s.Move(99, 1, 1) // 99 从没 Join 过
+	s.tick()
+
+	if fake.count() != 0 {
+		t.Fatalf("未知玩家移动不应广播, got %d", fake.count())
+	}
+}
+
+// TestLeaveRemovesPlayer:玩家离场后,它不再出现在别人的视野里。
+func TestLeaveRemovesPlayer(t *testing.T) {
+	fake := &fakeNotifier{}
+	s := newTestScene(fake)
+
+	s.Join(1, 10, 10)
+	s.Join(2, 20, 20)
+	s.Leave(2)
+	s.tick()
+
+	// 1 移动,此时 2 已离场,视野里没别人,广播对象为空。
+	s.Move(1, 15, 15)
+	s.tick()
+
+	mv := fake.last()
+	sameSet(t, "viewers after leave", mv.viewers)
+}
+
+// TestRunDrivesTick:用真正的 Run() 起 tick 主循环,验证定时器能驱动输入被处理。
+func TestRunDrivesTick(t *testing.T) {
+	fake := &fakeNotifier{}
+	s := newTestScene(fake)
+
+	go s.Run() // 真 tick 循环(测试结束随进程退出,这里的 goroutine 泄漏可接受)
+
+	s.Join(1, 10, 10)
+	s.Join(2, 20, 20)
+	s.Move(1, 15, 15)
+
+	// 轮询等待:30Hz 下一帧约 33ms,2 秒内必然处理完。
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && fake.count() == 0 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if fake.count() == 0 {
+		t.Fatal("tick 主循环未在超时内处理移动")
+	}
+}
