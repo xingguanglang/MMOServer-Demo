@@ -18,9 +18,9 @@ func TestEncodeReadFrameRoundTrip(t *testing.T) {
 		body []byte
 	}{
 		{"normal", 42, []byte("hello world")},
-		{"empty body", 7, []byte{}},                          // 空消息体也要能处理
+		{"empty body", 7, []byte{}},                           // 空消息体也要能处理
 		{"binary body", 1000, []byte{0x00, 0xFF, 0x0A, 0xAB}}, // 含 0x00 和 0x0A(\n),验证二进制安全
-		{"max type", 65535, []byte("x")},                     // uint16 上界
+		{"max type", 65535, []byte("x")},                      // uint16 上界
 	}
 
 	for _, c := range cases {
@@ -60,6 +60,7 @@ func TestReadFrameHandlesStickyPackets(t *testing.T) {
 		{1, []byte("first")},
 		{2, []byte("second-message-is-longer")},
 		{3, []byte{}}, // 中间夹一条空消息,边界更容易暴露 bug
+		{4, []byte("ssa")},
 	}
 
 	// 把所有消息打包后写进同一个 stream —— 这就是"粘在一起"的样子。
