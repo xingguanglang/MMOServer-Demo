@@ -21,21 +21,17 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ===========================================================================
-// 消息类型号 (MsgId)
-// ---------------------------------------------------------------------------
-// 这些号会被写进 TCP 帧头的 MsgType 字段(uint16)。
-// 收到一个包后,分发层(dispatcher)靠它知道 Body 该用哪个 message 反序列化、
-// 该路由到哪个 handler。命名约定:REQ = 客户端->服务器,RESP/BROADCAST = 服务器->客户端。
-// ===========================================================================
+// 消息类型编号。客户端与服务器共用,作为协议帧里的 [类型] 字段。
 type MsgId int32
 
 const (
-	MsgId_MSG_UNKNOWN        MsgId = 0 // proto3 要求枚举第 0 项,占位/非法值
-	MsgId_MSG_LOGIN_REQ      MsgId = 1 // C->S  登录请求
-	MsgId_MSG_LOGIN_RESP     MsgId = 2 // S->C  登录响应
-	MsgId_MSG_MOVE_REQ       MsgId = 3 // C->S  玩家想移动到某坐标
-	MsgId_MSG_MOVE_BROADCAST MsgId = 4 // S->C  广播:某玩家移动到了某坐标
+	MsgId_MSG_UNKNOWN        MsgId = 0
+	MsgId_MSG_LOGIN_REQ      MsgId = 1
+	MsgId_MSG_LOGIN_RESP     MsgId = 2
+	MsgId_MSG_MOVE_REQ       MsgId = 3
+	MsgId_MSG_MOVE_BROADCAST MsgId = 4
+	MsgId_MSG_PLAYER_ENTER   MsgId = 5 // 有玩家进入我的视野
+	MsgId_MSG_PLAYER_LEAVE   MsgId = 6 // 有玩家离开我的视野
 )
 
 // Enum value maps for MsgId.
@@ -46,6 +42,8 @@ var (
 		2: "MSG_LOGIN_RESP",
 		3: "MSG_MOVE_REQ",
 		4: "MSG_MOVE_BROADCAST",
+		5: "MSG_PLAYER_ENTER",
+		6: "MSG_PLAYER_LEAVE",
 	}
 	MsgId_value = map[string]int32{
 		"MSG_UNKNOWN":        0,
@@ -53,6 +51,8 @@ var (
 		"MSG_LOGIN_RESP":     2,
 		"MSG_MOVE_REQ":       3,
 		"MSG_MOVE_BROADCAST": 4,
+		"MSG_PLAYER_ENTER":   5,
+		"MSG_PLAYER_LEAVE":   6,
 	}
 )
 
@@ -83,7 +83,7 @@ func (MsgId) EnumDescriptor() ([]byte, []int) {
 	return file_proto_game_proto_rawDescGZIP(), []int{0}
 }
 
-// 登录请求:阶段1做"最小登录",只带一个用户名,不校验密码。
+// 登录请求:阶段 1 做"最小登录",只带一个用户名,不校验密码。
 type LoginReq struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Username      string                 `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
@@ -189,8 +189,7 @@ func (x *LoginResp) GetMessage() string {
 	return ""
 }
 
-// 移动请求:玩家想移动到世界坐标 (x, y)。
-// 阶段1用绝对坐标,简单直观;后续可改成增量/带时间戳做插值。
+// 移动请求:客户端上报自己想移动到的坐标。
 type MoveReq struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	X             float32                `protobuf:"fixed32,1,opt,name=x,proto3" json:"x,omitempty"`
@@ -243,8 +242,7 @@ func (x *MoveReq) GetY() float32 {
 	return 0
 }
 
-// 移动广播:服务器告诉(阶段1是所有)其他客户端,player_id 移动到了 (x, y)。
-// 阶段2接入 AOI 后,这条只会广播给"视野内"的玩家。
+// 移动广播:把某个玩家的新坐标推给视野内的其他玩家。
 type MoveBroadcast struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PlayerId      int64                  `protobuf:"varint,1,opt,name=player_id,json=playerId,proto3" json:"player_id,omitempty"`
@@ -305,6 +303,112 @@ func (x *MoveBroadcast) GetY() float32 {
 	return 0
 }
 
+// 进入视野:有一个玩家出现在了我的视野里,带上它的位置以便客户端生成它。
+type PlayerEnter struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PlayerId      int64                  `protobuf:"varint,1,opt,name=player_id,json=playerId,proto3" json:"player_id,omitempty"`
+	X             float32                `protobuf:"fixed32,2,opt,name=x,proto3" json:"x,omitempty"`
+	Y             float32                `protobuf:"fixed32,3,opt,name=y,proto3" json:"y,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlayerEnter) Reset() {
+	*x = PlayerEnter{}
+	mi := &file_proto_game_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlayerEnter) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlayerEnter) ProtoMessage() {}
+
+func (x *PlayerEnter) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_game_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlayerEnter.ProtoReflect.Descriptor instead.
+func (*PlayerEnter) Descriptor() ([]byte, []int) {
+	return file_proto_game_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *PlayerEnter) GetPlayerId() int64 {
+	if x != nil {
+		return x.PlayerId
+	}
+	return 0
+}
+
+func (x *PlayerEnter) GetX() float32 {
+	if x != nil {
+		return x.X
+	}
+	return 0
+}
+
+func (x *PlayerEnter) GetY() float32 {
+	if x != nil {
+		return x.Y
+	}
+	return 0
+}
+
+// 离开视野:有一个玩家离开了我的视野,客户端据此把它移除。
+type PlayerLeave struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PlayerId      int64                  `protobuf:"varint,1,opt,name=player_id,json=playerId,proto3" json:"player_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlayerLeave) Reset() {
+	*x = PlayerLeave{}
+	mi := &file_proto_game_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlayerLeave) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlayerLeave) ProtoMessage() {}
+
+func (x *PlayerLeave) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_game_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlayerLeave.ProtoReflect.Descriptor instead.
+func (*PlayerLeave) Descriptor() ([]byte, []int) {
+	return file_proto_game_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *PlayerLeave) GetPlayerId() int64 {
+	if x != nil {
+		return x.PlayerId
+	}
+	return 0
+}
+
 var File_proto_game_proto protoreflect.FileDescriptor
 
 const file_proto_game_proto_rawDesc = "" +
@@ -322,13 +426,21 @@ const file_proto_game_proto_rawDesc = "" +
 	"\rMoveBroadcast\x12\x1b\n" +
 	"\tplayer_id\x18\x01 \x01(\x03R\bplayerId\x12\f\n" +
 	"\x01x\x18\x02 \x01(\x02R\x01x\x12\f\n" +
-	"\x01y\x18\x03 \x01(\x02R\x01y*i\n" +
+	"\x01y\x18\x03 \x01(\x02R\x01y\"F\n" +
+	"\vPlayerEnter\x12\x1b\n" +
+	"\tplayer_id\x18\x01 \x01(\x03R\bplayerId\x12\f\n" +
+	"\x01x\x18\x02 \x01(\x02R\x01x\x12\f\n" +
+	"\x01y\x18\x03 \x01(\x02R\x01y\"*\n" +
+	"\vPlayerLeave\x12\x1b\n" +
+	"\tplayer_id\x18\x01 \x01(\x03R\bplayerId*\x95\x01\n" +
 	"\x05MsgId\x12\x0f\n" +
 	"\vMSG_UNKNOWN\x10\x00\x12\x11\n" +
 	"\rMSG_LOGIN_REQ\x10\x01\x12\x12\n" +
 	"\x0eMSG_LOGIN_RESP\x10\x02\x12\x10\n" +
 	"\fMSG_MOVE_REQ\x10\x03\x12\x16\n" +
-	"\x12MSG_MOVE_BROADCAST\x10\x04B0Z.github.com/xingguanglang/MMOServer-Demo/pkg/pbb\x06proto3"
+	"\x12MSG_MOVE_BROADCAST\x10\x04\x12\x14\n" +
+	"\x10MSG_PLAYER_ENTER\x10\x05\x12\x14\n" +
+	"\x10MSG_PLAYER_LEAVE\x10\x06B0Z.github.com/xingguanglang/MMOServer-Demo/pkg/pbb\x06proto3"
 
 var (
 	file_proto_game_proto_rawDescOnce sync.Once
@@ -343,13 +455,15 @@ func file_proto_game_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_game_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_game_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_proto_game_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_proto_game_proto_goTypes = []any{
 	(MsgId)(0),            // 0: game.MsgId
 	(*LoginReq)(nil),      // 1: game.LoginReq
 	(*LoginResp)(nil),     // 2: game.LoginResp
 	(*MoveReq)(nil),       // 3: game.MoveReq
 	(*MoveBroadcast)(nil), // 4: game.MoveBroadcast
+	(*PlayerEnter)(nil),   // 5: game.PlayerEnter
+	(*PlayerLeave)(nil),   // 6: game.PlayerLeave
 }
 var file_proto_game_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
@@ -370,7 +484,7 @@ func file_proto_game_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_game_proto_rawDesc), len(file_proto_game_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
