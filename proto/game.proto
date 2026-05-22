@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package game;
+
+// 生成的 Go 代码放到 pkg/pb 包,导入路径与模块名一致。
+option go_package = "github.com/xingguanglang/MMOServer-Demo/pkg/pb";
+
+// 消息类型编号。客户端与服务器共用,作为协议帧里的 [类型] 字段。
+enum MsgId {
+  MSG_UNKNOWN = 0;
+  MSG_LOGIN_REQ = 1;
+  MSG_LOGIN_RESP = 2;
+  MSG_MOVE_REQ = 3;
+  MSG_MOVE_BROADCAST = 4;
+  MSG_PLAYER_ENTER = 5; // 有玩家进入我的视野
+  MSG_PLAYER_LEAVE = 6; // 有玩家离开我的视野
+}
+
+// 登录请求:阶段 1 做"最小登录",只带一个用户名,不校验密码。
+message LoginReq {
+  string username = 1;
+}
+
+// 登录响应:服务器分配一个玩家 ID 返回。
+message LoginResp {
+  int64 player_id = 1;
+  bool success = 2;
+  string message = 3; // 失败原因 / 欢迎语
+}
+
+// 移动请求:客户端上报自己想移动到的坐标。
+message MoveReq {
+  float x = 1;
+  float y = 2;
+}
+
+// 移动广播:把某个玩家的新坐标推给视野内的其他玩家。
+message MoveBroadcast {
+  int64 player_id = 1;
+  float x = 2;
+  float y = 3;
+}
+
+// 进入视野:有一个玩家出现在了我的视野里,带上它的位置以便客户端生成它。
+message PlayerEnter {
+  int64 player_id = 1;
+  float x = 2;
+  float y = 3;
+}
+
+// 离开视野:有一个玩家离开了我的视野,客户端据此把它移除。
+message PlayerLeave {
+  int64 player_id = 1;
+}
