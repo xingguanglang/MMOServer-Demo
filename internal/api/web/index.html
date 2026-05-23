@@ -64,6 +64,7 @@
     </div>
     <div style="margin-top:10px; display:flex; gap:10px; align-items:center;">
       <button class="go" id="toggle-aoi" style="max-width:200px; background:#e0683c">Toggle AOI</button>
+      <button class="go" id="clear-all" style="max-width:200px; background:#c0392b">Clear all players</button>
       <span id="aoi-out" style="color:#8a8aa0; font-size:13px;">turn AOI off → broadcast to all → bandwidth jumps</span>
     </div>
     <p id="rates-line" style="margin-top:16px; color:#8a8aa0; font-size:13px;">rates: –</p>
@@ -196,6 +197,15 @@ document.getElementById("toggle-aoi").onclick = async () => {
   try {
     const r = await fetch("/api/aoi", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !lastAOI }) });
     out.textContent = r.ok ? "AOI → " + ((await r.json()).aoiEnabled ? "ON" : "OFF") : (r.status + " " + await r.text());
+  } catch (e) { out.textContent = "error: " + e; }
+};
+
+// 一键清空所有玩家(断开所有连接)
+document.getElementById("clear-all").onclick = async () => {
+  const out = document.getElementById("aoi-out");
+  try {
+    const r = await fetch("/api/clear", { method: "POST" });
+    out.textContent = r.ok ? "cleared " + (await r.json()).cleared + " connection(s)" : (r.status + " " + await r.text());
   } catch (e) { out.textContent = "error: " + e; }
 };
 </script>

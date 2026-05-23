@@ -58,6 +58,8 @@ func main() {
 	apiSrv.SetRateSetter(srv.SetRates)
 	// 管理台"AOI 开关":运行时切 AOI(关 = 全场广播)。
 	apiSrv.SetAOISetter(srv.SetAOIEnabled)
+	// 管理台"清空玩家":断开所有连接。
+	apiSrv.SetClearer(srv.DisconnectAll)
 
 	go func() {
 		log.Printf("HTTP API listening on %s", *httpAddr)

@@ -123,6 +123,21 @@ func (s *Server) AOIEnabled() bool { return s.scene.AOIEnabled() }
 // SetAOIEnabled 运行时切换 AOI。
 func (s *Server) SetAOIEnabled(enabled bool) { s.scene.SetAOIEnabled(enabled) }
 
+// DisconnectAll 关闭所有连接(玩家 + 观战者),返回关闭数量。
+// 每条连接关闭后,其看门狗会触发 scene.Leave,把玩家从世界移除。
+func (s *Server) DisconnectAll() int {
+	s.mu.RLock()
+	conns := make([]*Conn, 0, len(s.conns))
+	for _, c := range s.conns {
+		conns = append(conns, c)
+	}
+	s.mu.RUnlock()
+	for _, c := range conns {
+		c.Close() // 不在持锁时关闭:Close 会触发看门狗回头加锁 removeConn
+	}
+	return len(conns)
+}
+
 // SetRates 运行时修改场景帧率(tick / AOI 同步 / 全场同步,单位 Hz)。
 func (s *Server) SetRates(tickHz, aoiHz, allHz int) { s.scene.SetRates(tickHz, aoiHz, allHz) }
 

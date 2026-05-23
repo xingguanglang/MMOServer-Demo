@@ -48,6 +48,7 @@ type Server struct {
 	launch   func(spectate bool) error      // 可选:启动一个 ebiten 客户端窗口(由 cmd/server 注入)
 	setRates func(tickHz, aoiHz, allHz int) // 可选:运行时改帧率(由 cmd/server 注入)
 	setAOI   func(enabled bool)             // 可选:运行时切 AOI(由 cmd/server 注入)
+	clearAll func() int                     // 可选:断开所有连接、清空世界(由 cmd/server 注入)
 
 	mu   sync.Mutex
 	bots map[int64]*client.Client // 经本 API 生成的玩家:playerID -> 连接,供 /api/move 控制
@@ -61,6 +62,9 @@ func (s *Server) SetRateSetter(setRates func(tickHz, aoiHz, allHz int)) { s.setR
 
 // SetAOISetter 注入"运行时切 AOI"的能力。
 func (s *Server) SetAOISetter(setAOI func(enabled bool)) { s.setAOI = setAOI }
+
+// SetClearer 注入"清空所有玩家"的能力。
+func (s *Server) SetClearer(clearAll func() int) { s.clearAll = clearAll }
 
 // NewServer 创建 API。gameAddr 是游戏服务器的可拨号地址(如 127.0.0.1:9000);
 // snapshot 返回全场玩家位置,metrics 返回运行指标。
@@ -84,6 +88,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/launch", s.handleLaunch)
 	mux.HandleFunc("POST /api/rates", s.handleRates)
 	mux.HandleFunc("POST /api/aoi", s.handleAOI)
+	mux.HandleFunc("POST /api/clear", s.handleClear)
 	mux.HandleFunc("GET /api/players", s.handlePlayers)
 	mux.HandleFunc("GET /api/stats", s.handleStats)
 	return mux
@@ -305,6 +310,19 @@ func (s *Server) handleAOI(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setAOI(req.Enabled)
 	writeJSON(w, http.StatusOK, map[string]bool{"aoiEnabled": req.Enabled})
+}
+
+// handleClear 断开所有连接、清空世界(玩家、机器人、观战者全部移除)。
+func (s *Server) handleClear(w http.ResponseWriter, r *http.Request) {
+	if s.clearAll == nil {
+		http.Error(w, "clear not available", http.StatusNotImplemented)
+		return
+	}
+	n := s.clearAll()
+	s.mu.Lock()
+	s.bots = make(map[int64]*client.Client) // 这些连接已被关闭,清空引用
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]int{"cleared": n})
 }
 
 func (s *Server) handlePlayers(w http.ResponseWriter, r *http.Request) {
