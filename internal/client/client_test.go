@@ -148,6 +148,27 @@ func TestSpectatorSeesAllPlayers(t *testing.T) {
 	}
 }
 
+// TestPlayerReceivesMinimap:普通玩家应收到低频全场快照(小地图),里面至少有自己。
+func TestPlayerReceivesMinimap(t *testing.T) {
+	addr, cleanup := startServer(t)
+	defer cleanup()
+
+	a, err := Dial(addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer a.Close()
+	if err := a.Login("alice"); err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	go a.Run()
+	a.Move(100, 100)
+
+	if !waitFor(2*time.Second, func() bool { return len(a.Minimap()) >= 1 }) {
+		t.Fatal("玩家应收到小地图全场快照(至少含自己)")
+	}
+}
+
 func hasPlayer(c *Client, id int64) bool {
 	for _, p := range c.Players() {
 		if p.ID == id {

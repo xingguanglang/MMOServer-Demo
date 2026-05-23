@@ -6,8 +6,8 @@ package config
 // 模拟 / 世界参数
 const (
 	TickHz = 30 // 逻辑帧率(每秒 tick 数)
-	AOIHz  = 10 // 给玩家的 AOI 状态同步频率(每秒)
-	AllHz  = 10 // 给观战者的全场快照频率(每秒)
+	AOIHz  = 10 // 给玩家的 AOI 状态同步频率(每秒,看清附近)
+	AllHz  = 5  // 全场快照频率(每秒):给玩家画小地图、给观战者看全局
 
 	MapMinX  = 0   // 地图左边界
 	MapMinY  = 0   // 地图下边界

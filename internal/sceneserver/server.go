@@ -20,6 +20,7 @@ const (
 	msgStateSync   = uint32(pb.MsgId_MSG_STATE_SYNC)
 	msgPlayerEnter = uint32(pb.MsgId_MSG_PLAYER_ENTER)
 	msgPlayerLeave = uint32(pb.MsgId_MSG_PLAYER_LEAVE)
+	msgMinimapSync = uint32(pb.MsgId_MSG_MINIMAP_SYNC)
 )
 
 // Server 实现 pb.SceneServiceServer,内部持有一个 scene.Scene,并作为它的 Notifier。
@@ -59,8 +60,33 @@ func (s *Server) NotifyLeave(observerID, subjectID int64) {
 	s.emit(observerID, msgPlayerLeave, &pb.PlayerLeave{PlayerId: subjectID})
 }
 
-// SyncAll 用于上帝视角观战,分布式模式 5a 暂不支持。
-func (s *Server) SyncAll(states []scene.PlayerState) {}
+// SyncAll 把全场快照作为小地图(MinimapSync)发给每个玩家。
+// (分布式 5a 的上帝视角观战仍未支持——网关侧未路由观战连接。)
+func (s *Server) SyncAll(states []scene.PlayerState) {
+	if len(states) == 0 {
+		return
+	}
+	players := make([]*pb.PlayerState, 0, len(states))
+	for _, st := range states {
+		players = append(players, &pb.PlayerState{PlayerId: st.ID, X: st.X, Y: st.Y})
+	}
+	payload, err := proto.Marshal(&pb.StateSync{Players: players})
+	if err != nil {
+		return
+	}
+	s.mu.Lock()
+	out := s.out
+	s.mu.Unlock()
+	if out == nil {
+		return
+	}
+	for _, st := range states {
+		select {
+		case out <- &pb.SceneEvent{TargetPlayerId: st.ID, MsgType: msgMinimapSync, Payload: payload}:
+		default:
+		}
+	}
+}
 
 // emit 把一条下行事件编码后塞进当前会话的通道(无会话或积压则丢弃)。
 func (s *Server) emit(target int64, msgType uint32, msg proto.Message) {

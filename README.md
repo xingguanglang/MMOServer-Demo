@@ -28,6 +28,9 @@ player only syncs with others nearby instead of the whole map.
 - **10 Hz state sync + client interpolation**: the server broadcasts AOI-filtered
   position snapshots at 10 Hz, decoupled from the 30 Hz logic tick; the ebiten
   client interpolates them to smooth 60 fps movement.
+- **Minimap feed**: alongside the high-rate AOI updates, players also get a
+  low-rate (5 Hz) full-scene snapshot as a separate message, used to draw a
+  radar/minimap of everyone on the map.
 - **HTTP control API**: a small JSON API to spawn players at a coordinate and
   query everyone's positions — drive/observe the world without the binary protocol.
 - **Tested**: unit tests for the codec and AOI, plus end-to-end gateway, client,

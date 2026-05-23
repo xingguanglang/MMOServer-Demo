@@ -32,8 +32,9 @@ const (
 	MsgId_MSG_MOVE_BROADCAST MsgId = 4
 	MsgId_MSG_PLAYER_ENTER   MsgId = 5 // 有玩家进入我的视野
 	MsgId_MSG_PLAYER_LEAVE   MsgId = 6 // 有玩家离开我的视野
-	MsgId_MSG_STATE_SYNC     MsgId = 7 // 10Hz 状态同步快照
+	MsgId_MSG_STATE_SYNC     MsgId = 7 // AOI 状态同步快照
 	MsgId_MSG_SPECTATE       MsgId = 8 // 客户端请求以"上帝视角"观战(收全量状态)
+	MsgId_MSG_MINIMAP_SYNC   MsgId = 9 // 低频全场快照,给玩家画小地图(复用 StateSync 结构)
 )
 
 // Enum value maps for MsgId.
@@ -48,6 +49,7 @@ var (
 		6: "MSG_PLAYER_LEAVE",
 		7: "MSG_STATE_SYNC",
 		8: "MSG_SPECTATE",
+		9: "MSG_MINIMAP_SYNC",
 	}
 	MsgId_value = map[string]int32{
 		"MSG_UNKNOWN":        0,
@@ -59,6 +61,7 @@ var (
 		"MSG_PLAYER_LEAVE":   6,
 		"MSG_STATE_SYNC":     7,
 		"MSG_SPECTATE":       8,
+		"MSG_MINIMAP_SYNC":   9,
 	}
 )
 
@@ -550,7 +553,7 @@ const file_proto_game_proto_rawDesc = "" +
 	"\x01x\x18\x02 \x01(\x02R\x01x\x12\f\n" +
 	"\x01y\x18\x03 \x01(\x02R\x01y\"8\n" +
 	"\tStateSync\x12+\n" +
-	"\aplayers\x18\x01 \x03(\v2\x11.game.PlayerStateR\aplayers*\xbb\x01\n" +
+	"\aplayers\x18\x01 \x03(\v2\x11.game.PlayerStateR\aplayers*\xd1\x01\n" +
 	"\x05MsgId\x12\x0f\n" +
 	"\vMSG_UNKNOWN\x10\x00\x12\x11\n" +
 	"\rMSG_LOGIN_REQ\x10\x01\x12\x12\n" +
@@ -560,7 +563,8 @@ const file_proto_game_proto_rawDesc = "" +
 	"\x10MSG_PLAYER_ENTER\x10\x05\x12\x14\n" +
 	"\x10MSG_PLAYER_LEAVE\x10\x06\x12\x12\n" +
 	"\x0eMSG_STATE_SYNC\x10\a\x12\x10\n" +
-	"\fMSG_SPECTATE\x10\bB0Z.github.com/xingguanglang/MMOServer-Demo/pkg/pbb\x06proto3"
+	"\fMSG_SPECTATE\x10\b\x12\x14\n" +
+	"\x10MSG_MINIMAP_SYNC\x10\tB0Z.github.com/xingguanglang/MMOServer-Demo/pkg/pbb\x06proto3"
 
 var (
 	file_proto_game_proto_rawDescOnce sync.Once

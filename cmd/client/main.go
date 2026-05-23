@@ -118,9 +118,29 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 	// 自己:绿色。
 	drawPlayer(screen, g.selfX, g.selfY, color.RGBA{90, 220, 90, 255})
+	g.drawMinimap(screen)
 	ebitenutil.DebugPrint(screen, fmt.Sprintf(
 		"id=%d  pos=(%.0f,%.0f)  others in view=%d\nWASD / arrows to move",
 		g.c.PlayerID(), g.selfX, g.selfY, len(g.rendered)))
+}
+
+// drawMinimap 在右上角画一个小地图,显示全场所有玩家(低频 MinimapSync),
+// 即使他们不在 AOI 视野内。自己用绿色高亮。
+func (g *Game) drawMinimap(screen *ebiten.Image) {
+	const mm = 96 // 小地图边长(像素)
+	ox, oy := float32(screenSize-mm-6), float32(6)
+
+	vector.DrawFilledRect(screen, ox, oy, mm, mm, color.RGBA{0, 0, 0, 160}, false)
+	vector.StrokeRect(screen, ox, oy, mm, mm, 1, color.RGBA{120, 120, 140, 255}, false)
+
+	scaleMM := float32(mm) / float32(mapSize)
+	for _, p := range g.c.Minimap() {
+		clr := color.RGBA{200, 80, 80, 255} // 别人:红
+		if p.ID == g.c.PlayerID() {
+			clr = color.RGBA{90, 220, 90, 255} // 自己:绿
+		}
+		vector.DrawFilledCircle(screen, ox+p.X*scaleMM, oy+p.Y*scaleMM, 1.5, clr, false)
+	}
 }
 
 func (g *Game) Layout(int, int) (int, int) { return screenSize, screenSize }

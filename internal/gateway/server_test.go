@@ -184,8 +184,9 @@ func TestPlayerLeaveOnDisconnect(t *testing.T) {
 	}
 }
 
-// TestSoloPlayerNoBroadcast:场上只有自己时移动,不该收到任何广播。
-func TestSoloPlayerNoBroadcast(t *testing.T) {
+// TestSoloPlayerNoAOIBroadcast:场上只有自己时移动,不该收到 AOI 状态同步
+//(视野里没别人)。低频的小地图 MinimapSync 是允许的(里面只有自己)。
+func TestSoloPlayerNoAOIBroadcast(t *testing.T) {
 	addr, cleanup := startTestServer(t)
 	defer cleanup()
 
@@ -194,8 +195,15 @@ func TestSoloPlayerNoBroadcast(t *testing.T) {
 
 	sendMove(t, connA, 1, 1)
 
-	connA.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
-	if _, _, err := protocol.ReadFrame(connA); err == nil {
-		t.Fatal("场上只有自己,移动不该收到任何消息")
+	// 读到超时为止;期间只要出现 AOI StateSync 就算失败,MinimapSync 等忽略。
+	connA.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	for {
+		msgType, _, err := protocol.ReadFrame(connA)
+		if err != nil {
+			return // 超时,没有更多消息 → 通过
+		}
+		if msgType == MsgStateSync {
+			t.Fatal("场上只有自己,不该收到 AOI 状态同步")
+		}
 	}
 }

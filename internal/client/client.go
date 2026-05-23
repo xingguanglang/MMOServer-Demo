@@ -23,6 +23,7 @@ const (
 	msgPlayerLeave = uint16(pb.MsgId_MSG_PLAYER_LEAVE)
 	msgStateSync   = uint16(pb.MsgId_MSG_STATE_SYNC)
 	msgSpectate    = uint16(pb.MsgId_MSG_SPECTATE)
+	msgMinimapSync = uint16(pb.MsgId_MSG_MINIMAP_SYNC)
 )
 
 // RemotePlayer 是客户端视野里的一个其他玩家,位置取自服务器最近一次状态同步。
@@ -39,6 +40,7 @@ type Client struct {
 
 	mu        sync.RWMutex
 	players   map[int64]*RemotePlayer
+	minimap   []RemotePlayer // 全场快照(画小地图用),低频整体替换
 	selfX     float32
 	selfY     float32
 	spectator bool // 观战模式:StateSync 是全量,整体替换玩家表
@@ -147,6 +149,17 @@ func (c *Client) handle(msgType uint16, body []byte) {
 			}
 			c.mu.Unlock()
 		}
+	case msgMinimapSync:
+		var m pb.StateSync
+		if proto.Unmarshal(body, &m) == nil {
+			mini := make([]RemotePlayer, 0, len(m.GetPlayers()))
+			for _, st := range m.GetPlayers() {
+				mini = append(mini, RemotePlayer{ID: st.GetPlayerId(), X: st.GetX(), Y: st.GetY()})
+			}
+			c.mu.Lock()
+			c.minimap = mini // 低频全场快照,整体替换
+			c.mu.Unlock()
+		}
 	}
 }
 
@@ -184,6 +197,13 @@ func (c *Client) Players() []RemotePlayer {
 		out = append(out, *p)
 	}
 	return out
+}
+
+// Minimap 返回最近一次全场快照(画小地图用)。
+func (c *Client) Minimap() []RemotePlayer {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return append([]RemotePlayer(nil), c.minimap...)
 }
 
 // Self 返回自己当前坐标。

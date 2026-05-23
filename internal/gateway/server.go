@@ -23,6 +23,7 @@ const (
 	MsgPlayerLeave   uint16 = 6
 	MsgStateSync     uint16 = 7
 	MsgSpectate      uint16 = 8
+	MsgMinimapSync   uint16 = 9
 )
 
 // Server 是单体服务器:网关 + 登录 + 场景都在一个进程里。
@@ -174,35 +175,42 @@ func (s *Server) SyncState(observerID int64, states []scene.PlayerState) {
 	s.sendToPlayer(observerID, MsgStateSync, &pb.StateSync{Players: players})
 }
 
-// SyncAll 缓存最新全量快照(供 HTTP API 查询),并发给所有观战者(上帝视角)。
+// SyncAll 缓存最新全量快照(供 HTTP API 查询),并把全场快照分发出去:
+// 所有玩家收到 MinimapSync(用来画小地图),观战者收到 StateSync(上帝视角全量替换)。
 func (s *Server) SyncAll(states []scene.PlayerState) {
-	s.mu.Lock()
-	s.lastSnapshot = states // scene 每 tick 传入新切片、之后不再改动,存引用安全
-	hasSpectators := len(s.spectators) > 0
-	var targets []*Conn
-	if hasSpectators {
-		targets = make([]*Conn, 0, len(s.spectators))
-		for _, c := range s.spectators {
-			targets = append(targets, c)
-		}
-	}
-	s.mu.Unlock()
-
-	if !hasSpectators {
-		return
-	}
-
 	players := make([]*pb.PlayerState, 0, len(states))
 	for _, st := range states {
 		players = append(players, &pb.PlayerState{PlayerId: st.ID, X: st.X, Y: st.Y})
 	}
-	packet, err := encodeMessage(MsgStateSync, &pb.StateSync{Players: players})
-	if err != nil {
-		log.Printf("encode error: %v", err)
-		return
+	full := &pb.StateSync{Players: players}
+
+	s.mu.Lock()
+	s.lastSnapshot = states // scene 每 tick 传入新切片、之后不再改动,存引用安全
+	allTargets := make([]*Conn, 0, len(s.conns))
+	for _, c := range s.conns {
+		allTargets = append(allTargets, c)
 	}
-	for _, c := range targets {
-		c.Send(packet)
+	specTargets := make([]*Conn, 0, len(s.spectators))
+	for _, c := range s.spectators {
+		specTargets = append(specTargets, c)
+	}
+	s.mu.Unlock()
+
+	// 小地图:全场快照发给所有连接(玩家据此画小地图,观战者忽略)。
+	if len(allTargets) > 0 {
+		if packet, err := encodeMessage(MsgMinimapSync, full); err == nil {
+			for _, c := range allTargets {
+				c.Send(packet)
+			}
+		}
+	}
+	// 上帝视角:全场快照发给观战者(它们整体替换世界)。
+	if len(specTargets) > 0 {
+		if packet, err := encodeMessage(MsgStateSync, full); err == nil {
+			for _, c := range specTargets {
+				c.Send(packet)
+			}
+		}
 	}
 }
 
