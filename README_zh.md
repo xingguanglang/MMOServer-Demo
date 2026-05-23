@@ -1,5 +1,7 @@
 # MMOServer-Demo
 
+[![CI](https://github.com/xingguanglang/MMOServer-Demo/actions/workflows/ci.yml/badge.svg)](https://github.com/xingguanglang/MMOServer-Demo/actions/workflows/ci.yml)
+
 [English](README.md) | **简体中文**
 
 一个用 Go 编写的分布式 MMO 游戏服务器框架,用于演示实时多人世界背后的核心系统:
@@ -162,4 +164,5 @@ go run ./cmd/loadtest -n 200 -duration 15s
 - [x] **阶段 3** — 10 Hz 状态同步广播 + ebiten 可视化客户端
 - [x] **阶段 4** — 压测机器人(1–2k 虚拟玩家)+ 性能数据 + AOI 对比
 - [ ] **阶段 5** — 分布式拆分(网关 / 场景 / 战斗)、gRPC、Redis + MySQL
-- [ ] **阶段 6** — Docker Compose、GitHub Actions CI、完整文档
+- [x] **阶段 6** — Docker Compose、GitHub Actions CI、中英 README + 设计文档
+      (先于阶段 5 完成;Redis/MySQL 持久化随分布式拆分一起做)

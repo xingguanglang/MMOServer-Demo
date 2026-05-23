@@ -1,5 +1,7 @@
 # MMOServer-Demo
 
+[![CI](https://github.com/xingguanglang/MMOServer-Demo/actions/workflows/ci.yml/badge.svg)](https://github.com/xingguanglang/MMOServer-Demo/actions/workflows/ci.yml)
+
 **English** | [简体中文](README_zh.md)
 
 A distributed MMO game-server framework written in Go, built to demonstrate the
@@ -175,4 +177,5 @@ go run ./cmd/loadtest -n 200 -duration 15s
 - [x] **Phase 3** — 10 Hz state-sync broadcast + ebiten visualization client
 - [x] **Phase 4** — load-testing bots (1–2k virtual players) + performance data + AOI comparison
 - [ ] **Phase 5** — distributed split (gateway / scene / battle), gRPC, Redis + MySQL
-- [ ] **Phase 6** — Docker Compose, GitHub Actions CI, full docs
+- [x] **Phase 6** — Docker Compose, GitHub Actions CI, bilingual README + design docs
+      (done ahead of phase 5; Redis/MySQL persistence lands with the distributed split)
