@@ -44,14 +44,15 @@ type Server struct {
 }
 
 // NewServer 创建服务器,并把场景挂上(场景以本 Server 作为 Notifier)。
-func NewServer() *Server {
+// aoiEnabled=false 时场景退回"全场广播",用于 AOI 性能对比。
+func NewServer(aoiEnabled bool) *Server {
 	s := &Server{
 		inbound:    make(chan Inbound, 1024),
 		conns:      make(map[uint64]*Conn),
 		spectators: make(map[uint64]*Conn),
 	}
-	aoiMgr := aoi.NewManager(0, 0, 256, 256, 32) // 256x256 地图,32 边长 → 8x8 格
-	s.scene = scene.NewScene(aoiMgr, s, 30, 10)  // s 实现了 scene.Notifier;30Hz tick,10Hz 状态同步
+	aoiMgr := aoi.NewManager(0, 0, 256, 256, 32)            // 256x256 地图,32 边长 → 8x8 格
+	s.scene = scene.NewScene(aoiMgr, s, 30, 10, aoiEnabled) // s 实现 scene.Notifier;30Hz tick,10Hz 同步
 	return s
 }
 

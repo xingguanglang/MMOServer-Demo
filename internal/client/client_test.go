@@ -15,7 +15,7 @@ func startServer(t *testing.T) (addr string, cleanup func()) {
 	if err != nil {
 		t.Fatalf("listen failed: %v", err)
 	}
-	go gateway.NewServer().Serve(ln)
+	go gateway.NewServer(true).Serve(ln)
 	return ln.Addr().String(), func() { ln.Close() }
 }
 

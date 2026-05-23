@@ -128,6 +128,39 @@ go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
 protoc --go_out=. --go_opt=module=github.com/xingguanglang/MMOServer-Demo proto/game.proto
 ```
 
+## Performance
+
+Measured on a local dev machine over loopback (Go 1.26), 256×256 map, 8×8 AOI
+grid (cell 32), 30 Hz tick, 10 Hz state sync. Bots random-walk (move every
+100 ms); `cmd/loadtest` reports frames/sec and downstream bytes summed across
+all bots.
+
+**Concurrency (AOI on)**
+
+| Virtual players | Failed | Frames/s (recv) | Downstream |
+| --------------- | ------ | --------------- | ---------- |
+| 200             | 0      | ~17k            | ~0.8 MB/s  |
+| 1000            | 0      | ~180k           | ~2.4 MB/s  |
+
+**AOI vs. broadcast-to-all (200 players)**
+
+| Mode                          | Downstream |
+| ----------------------------- | ---------- |
+| AOI on                        | ~0.8 MB/s  |
+| AOI off (broadcast everyone)  | ~5.6 MB/s  |
+
+AOI cuts downstream bandwidth ~7×, matching the nine-grid's 9/64 view-area ratio
+(each player syncs only its 9 cells out of 64). The advantage grows on larger
+maps, where a player's view is a smaller fraction of the world.
+
+Reproduce:
+
+```bash
+go run ./cmd/server                       # AOI on (default)
+# or: go run ./cmd/server -aoi=false      # broadcast-to-all baseline
+go run ./cmd/loadtest -n 200 -duration 15s
+```
+
 ## Design docs
 
 - [Nine-grid AOI](docs/design-aoi.md) — why grid AOI, cell-size selection,
@@ -140,6 +173,6 @@ protoc --go_out=. --go_opt=module=github.com/xingguanglang/MMOServer-Demo proto/
 - [x] **Phase 1** — project skeleton, binary protocol, gateway send/recv, minimal login
 - [x] **Phase 2** — scene tick loop, nine-grid AOI, enter/leave view events, end-to-end sync
 - [x] **Phase 3** — 10 Hz state-sync broadcast + ebiten visualization client
-- [ ] **Phase 4** — load-testing bots (1–2k virtual players) + performance data
+- [x] **Phase 4** — load-testing bots (1–2k virtual players) + performance data + AOI comparison
 - [ ] **Phase 5** — distributed split (gateway / scene / battle), gRPC, Redis + MySQL
 - [ ] **Phase 6** — Docker Compose, GitHub Actions CI, full docs

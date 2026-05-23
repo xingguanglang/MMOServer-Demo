@@ -84,7 +84,7 @@ func main() {
 	statsTicker := time.NewTicker(1 * time.Second)
 	defer statsTicker.Stop()
 	deadline := time.After(*duration)
-	var lastRecv uint64
+	var lastRecv, lastBytes uint64
 	for {
 		select {
 		case <-deadline:
@@ -93,15 +93,18 @@ func main() {
 			log.Printf("done")
 			return
 		case <-statsTicker.C:
-			var totalRecv uint64
+			var totalRecv, totalBytes uint64
 			mu.Lock()
 			for _, c := range clients {
 				totalRecv += c.ReceivedCount()
+				totalBytes += c.ReceivedBytes()
 			}
 			mu.Unlock()
-			log.Printf("connected=%d failed=%d recvTotal=%d recv/s≈%d",
-				connected.Load(), failed.Load(), totalRecv, totalRecv-lastRecv)
+			mbps := float64(totalBytes-lastBytes) / (1024 * 1024)
+			log.Printf("connected=%d failed=%d recv/s≈%d down≈%.2f MB/s",
+				connected.Load(), failed.Load(), totalRecv-lastRecv, mbps)
 			lastRecv = totalRecv
+			lastBytes = totalBytes
 		}
 	}
 }

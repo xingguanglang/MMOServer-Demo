@@ -49,18 +49,20 @@ type Scene struct {
 	tickRate time.Duration
 	notifier Notifier
 
-	tickCount int // tick 计数器
-	syncEvery int // 每隔多少 tick 广播一次状态(30Hz tick / 10Hz sync = 3)
+	tickCount  int // tick 计数器
+	syncEvery  int // 每隔多少 tick 广播一次状态(30Hz tick / 10Hz sync = 3)
+	aoiEnabled bool
 }
 
-func NewScene(aoiMgr *aoi.Manager, notifier Notifier, tickHz int, syncHz int) *Scene {
+func NewScene(aoiMgr *aoi.Manager, notifier Notifier, tickHz int, syncHz int, aoiEnabled bool) *Scene {
 	return &Scene{
-		aoiMgr:    aoiMgr,
-		players:   make(map[int64]*Player),
-		inCh:      make(chan input, 1024),
-		tickRate:  time.Second / time.Duration(tickHz),
-		notifier:  notifier,
-		syncEvery: tickHz / syncHz, // 30Hz tick / 10Hz sync = 3
+		aoiMgr:     aoiMgr,
+		players:    make(map[int64]*Player),
+		inCh:       make(chan input, 1024),
+		tickRate:   time.Second / time.Duration(tickHz),
+		notifier:   notifier,
+		syncEvery:  tickHz / syncHz, // 30Hz tick / 10Hz sync = 3
+		aoiEnabled: aoiEnabled,
 	}
 }
 func (s *Scene) Join(playerID int64, x, y float32) {
@@ -104,15 +106,28 @@ func (s *Scene) broadcastState() {
 		all = append(all, PlayerState{ID: p.ID, X: p.X, Y: p.Y})
 	}
 	s.notifier.SyncAll(all)
+
 	for id, p := range s.players {
-		viewers := s.aoiMgr.ViewPlayers(p.X, p.Y) // 含自己
-		states := make([]PlayerState, 0, len(viewers))
-		for _, vid := range viewers {
-			if vid == id {
-				continue // 不把自己发给自己
+		var states []PlayerState
+		if s.aoiEnabled {
+			// AOI 开:只发视野内的人
+			viewers := s.aoiMgr.ViewPlayers(p.X, p.Y)
+			states = make([]PlayerState, 0, len(viewers))
+			for _, vid := range viewers {
+				if vid == id {
+					continue
+				}
+				if other := s.players[vid]; other != nil {
+					states = append(states, PlayerState{ID: other.ID, X: other.X, Y: other.Y})
+				}
 			}
-			if other := s.players[vid]; other != nil {
-				states = append(states, PlayerState{ID: other.ID, X: other.X, Y: other.Y})
+		} else {
+			// AOI 关:发全场(除自己)—— O(n²) 对照组
+			states = make([]PlayerState, 0, len(all))
+			for _, st := range all {
+				if st.ID != id {
+					states = append(states, st)
+				}
 			}
 		}
 		if len(states) > 0 {

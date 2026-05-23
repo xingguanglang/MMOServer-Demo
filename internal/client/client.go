@@ -43,7 +43,8 @@ type Client struct {
 	selfY     float32
 	spectator bool // 观战模式:StateSync 是全量,整体替换玩家表
 
-	recv atomic.Uint64 // 收到的消息帧计数,用于压测统计吞吐
+	recv      atomic.Uint64 // 收到的消息帧计数
+	recvBytes atomic.Uint64 // 收到的字节数(含 4 字节长度头),用于压测统计带宽
 }
 
 // Dial 连接服务器。
@@ -104,12 +105,17 @@ func (c *Client) Run() error {
 			return err
 		}
 		c.recv.Add(1)
+		// 帧总字节 = 4 字节长度头 + (类型 2 + body),后者正好是 protocol 里的 length 字段值。
+		c.recvBytes.Add(uint64(4 + 2 + len(body)))
 		c.handle(msgType, body)
 	}
 }
 
 // ReceivedCount 返回累计收到的消息帧数(并发安全)。
 func (c *Client) ReceivedCount() uint64 { return c.recv.Load() }
+
+// ReceivedBytes 返回累计收到的字节数(并发安全)。
+func (c *Client) ReceivedBytes() uint64 { return c.recvBytes.Load() }
 
 func (c *Client) handle(msgType uint16, body []byte) {
 	switch msgType {

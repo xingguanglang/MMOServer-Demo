@@ -18,7 +18,7 @@ func startTestServer(t *testing.T) (addr string, cleanup func()) {
 	if err != nil {
 		t.Fatalf("listen failed: %v", err)
 	}
-	srv := NewServer()
+	srv := NewServer(true)
 	go srv.Serve(ln) // Serve 阻塞,放后台跑
 	return ln.Addr().String(), func() { ln.Close() }
 }

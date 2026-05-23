@@ -117,6 +117,37 @@ go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
 protoc --go_out=. --go_opt=module=github.com/xingguanglang/MMOServer-Demo proto/game.proto
 ```
 
+## 性能
+
+在本地开发机、loopback 上测得(Go 1.26),地图 256×256,8×8 AOI 网格(格子 32),
+30Hz tick,10Hz 状态同步。机器人随机游走(每 100ms 移动一次);`cmd/loadtest`
+汇总所有机器人的每秒收帧数和下行字节数。
+
+**并发(AOI 开)**
+
+| 虚拟玩家 | 失败 | 每秒收帧 | 下行带宽 |
+| -------- | ---- | -------- | -------- |
+| 200      | 0    | ~17k     | ~0.8 MB/s |
+| 1000     | 0    | ~180k    | ~2.4 MB/s |
+
+**AOI 开 vs 全场广播(200 玩家)**
+
+| 模式                  | 下行带宽 |
+| --------------------- | -------- |
+| AOI 开                | ~0.8 MB/s |
+| AOI 关(广播给所有人)  | ~5.6 MB/s |
+
+AOI 把下行带宽削减约 7 倍,正好对应九宫格"只看 9/64 地图"的视野占比(每个玩家
+只同步 64 格中自己周围的 9 格)。地图越大,单个玩家视野占全图的比例越小,AOI 优势越明显。
+
+复现:
+
+```bash
+go run ./cmd/server                       # AOI 开(默认)
+# 或:go run ./cmd/server -aoi=false      # 全场广播对照组
+go run ./cmd/loadtest -n 200 -duration 15s
+```
+
 ## 设计文档
 
 - [九宫格 AOI](docs/design-aoi.md) — 为什么用网格 AOI、格子大小选型、进/出视野算法、
@@ -129,6 +160,6 @@ protoc --go_out=. --go_opt=module=github.com/xingguanglang/MMOServer-Demo proto/
 - [x] **阶段 1** — 项目骨架、二进制协议、网关收发、最小登录
 - [x] **阶段 2** — 场景 tick 主循环、九宫格 AOI、进/出视野事件、端到端同步
 - [x] **阶段 3** — 10 Hz 状态同步广播 + ebiten 可视化客户端
-- [ ] **阶段 4** — 压测机器人(1–2k 虚拟玩家)+ 性能数据
+- [x] **阶段 4** — 压测机器人(1–2k 虚拟玩家)+ 性能数据 + AOI 对比
 - [ ] **阶段 5** — 分布式拆分(网关 / 场景 / 战斗)、gRPC、Redis + MySQL
 - [ ] **阶段 6** — Docker Compose、GitHub Actions CI、完整文档
