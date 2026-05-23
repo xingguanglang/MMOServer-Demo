@@ -1,6 +1,7 @@
 package scene
 
 import (
+	"sync/atomic"
 	"time"
 
 	"github.com/xingguanglang/MMOServer-Demo/internal/aoi"
@@ -46,26 +47,57 @@ type Scene struct {
 	aoiMgr   *aoi.Manager
 	players  map[int64]*Player
 	inCh     chan input
-	tickRate time.Duration
 	notifier Notifier
 
-	tickCount  int // tick 计数器
-	aoiEvery   int
-	allEvery   int
+	tickCount int // tick 计数器(只在 tick goroutine 里用)
+
+	// 速率用原子量存,这样可以被 HTTP 请求运行时修改、被 tick goroutine 读取,无需锁。
+	// (游戏状态——玩家表/AOI——仍然只在 tick goroutine 里改,保持无锁。)
+	tickHz     atomic.Int64
+	aoiHz      atomic.Int64
+	allHz      atomic.Int64
 	aoiEnabled bool
 }
 
 func NewScene(aoiMgr *aoi.Manager, notifier Notifier, tickHz int, allHz int, aoiHz int, aoiEnabled bool) *Scene {
-	return &Scene{
+	s := &Scene{
 		aoiMgr:     aoiMgr,
 		players:    make(map[int64]*Player),
 		inCh:       make(chan input, 1024),
-		tickRate:   time.Second / time.Duration(tickHz),
 		notifier:   notifier,
-		aoiEvery:   tickHz / aoiHz, // 30Hz tick / 10Hz aoi = 3
-		allEvery:   tickHz / allHz, // 30Hz tick / 10Hz all = 3
 		aoiEnabled: aoiEnabled,
 	}
+	s.tickHz.Store(int64(tickHz))
+	s.aoiHz.Store(int64(aoiHz))
+	s.allHz.Store(int64(allHz))
+	return s
+}
+
+// SetRates 运行时修改帧率(<1 的值忽略)。
+func (s *Scene) SetRates(tickHz, aoiHz, allHz int) {
+	if tickHz >= 1 {
+		s.tickHz.Store(int64(tickHz))
+	}
+	if aoiHz >= 1 {
+		s.aoiHz.Store(int64(aoiHz))
+	}
+	if allHz >= 1 {
+		s.allHz.Store(int64(allHz))
+	}
+}
+
+// Rates 返回当前的三个帧率(供管理台显示)。
+func (s *Scene) Rates() (tickHz, aoiHz, allHz int) {
+	return int(s.tickHz.Load()), int(s.aoiHz.Load()), int(s.allHz.Load())
+}
+
+// tickInterval 由当前 tickHz 算出每帧间隔。
+func (s *Scene) tickInterval() time.Duration {
+	hz := s.tickHz.Load()
+	if hz < 1 {
+		hz = 1
+	}
+	return time.Second / time.Duration(hz)
 }
 func (s *Scene) Join(playerID int64, x, y float32) {
 	s.inCh <- input{kind: inputJoin, playerID: playerID, x: x, y: y}
@@ -77,23 +109,34 @@ func (s *Scene) Move(playerID int64, x, y float32) {
 	s.inCh <- input{kind: inputMove, playerID: playerID, x: x, y: y}
 }
 
-// Run 启动 tick 主循环(会阻塞,通常放在自己的 goroutine 里跑)
+// Run 启动 tick 主循环(会阻塞,通常放在自己的 goroutine 里跑)。
+// 每帧结束后检查 tickHz 是否被改过,改了就重置定时器,实现运行时变速。
 func (s *Scene) Run() {
-	ticker := time.NewTicker(s.tickRate)
+	cur := s.tickInterval()
+	ticker := time.NewTicker(cur)
 	defer ticker.Stop()
-	for range ticker.C { // 每到一个 tick 时刻,ticker.C 这个通道就来一个信号
+	for range ticker.C {
 		s.tick()
+		if want := s.tickInterval(); want != cur {
+			cur = want
+			ticker.Reset(cur)
+		}
 	}
 }
 func (s *Scene) tick() {
 	s.drainInputs()
 	s.tickCount++
-	if s.tickCount%s.aoiEvery == 0 { // AOI 同步和全量同步错开,避免同一 tick 里又发了 AOI 又发了全量
-		s.broadcastAOI()
+	tickHz := s.tickHz.Load()
+	// every = tickHz/同步Hz;若同步频率 >= tickHz 则每帧都发(every<1 视为 1)。
+	if aoiHz := s.aoiHz.Load(); aoiHz > 0 {
+		if e := int(tickHz / aoiHz); e < 1 || s.tickCount%e == 0 {
+			s.broadcastAOI()
+		}
 	}
-	if s.tickCount%s.allEvery == 0 {
-		s.broadcastAll()
-
+	if allHz := s.allHz.Load(); allHz > 0 {
+		if e := int(tickHz / allHz); e < 1 || s.tickCount%e == 0 {
+			s.broadcastAll()
+		}
 	}
 }
 func (s *Scene) drainInputs() {

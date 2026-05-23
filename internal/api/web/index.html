@@ -46,6 +46,7 @@
   <button data-tab="spawn">Spawn</button>
   <button data-tab="move">Move</button>
   <button data-tab="loadtest">Load Test</button>
+  <button data-tab="rates">Rates</button>
 </nav>
 
 <main>
@@ -61,6 +62,7 @@
       <button class="go" id="open-spectator" style="max-width:200px; background:#7a52e0">Open spectator window</button>
       <span id="launch-out" style="color:#8a8aa0; font-size:13px;"></span>
     </div>
+    <p id="rates-line" style="margin-top:16px; color:#8a8aa0; font-size:13px;">rates: –</p>
   </section>
 
   <section id="spawn" class="panel">
@@ -89,6 +91,16 @@
       <button class="go" type="submit">Start load test</button>
     </form>
     <pre id="loadtest-out"></pre>
+  </section>
+
+  <section id="rates" class="panel">
+    <form id="rates-form">
+      <label>Tick Hz (logic) <input name="tickHz" type="number" min="1" max="120"></label>
+      <label>AOI sync Hz <input name="aoiHz" type="number" min="1" max="120"></label>
+      <label>Full/minimap sync Hz <input name="allHz" type="number" min="1" max="120"></label>
+      <button class="go" type="submit">Apply rates (live)</button>
+    </form>
+    <pre id="rates-out"></pre>
   </section>
 </main>
 
@@ -121,8 +133,16 @@ async function refresh() {
     const aoi = document.getElementById("m-aoi");
     aoi.textContent = m.aoiEnabled ? "ON" : "OFF (broadcast all)";
     aoi.className = "value " + (m.aoiEnabled ? "on" : "off");
+    document.getElementById("rates-line").textContent =
+      `rates: tick ${m.tickHz}Hz · AOI ${m.aoiHz}Hz · full ${m.allHz}Hz`;
+    const rf = document.getElementById("rates-form");
+    if (!ratesInit) { // 首次用当前值填充表单
+      rf.tickHz.value = m.tickHz; rf.aoiHz.value = m.aoiHz; rf.allHz.value = m.allHz;
+      ratesInit = true;
+    }
   } catch (e) { /* server down */ }
 }
+let ratesInit = false;
 setInterval(refresh, 1000); refresh();
 
 // 表单 → POST JSON
@@ -158,6 +178,11 @@ async function launch(spectate) {
 }
 document.getElementById("open-client").onclick = () => launch(false);
 document.getElementById("open-spectator").onclick = () => launch(true);
+
+document.getElementById("rates-form").onsubmit = e => {
+  e.preventDefault();
+  post("/api/rates", { tickHz: num(e.target, "tickHz"), aoiHz: num(e.target, "aoiHz"), allHz: num(e.target, "allHz") }, "rates-out");
+};
 </script>
 </body>
 </html>

@@ -41,15 +41,21 @@ func main() {
 			return out
 		},
 		func() api.Metrics {
+			tickHz, aoiHz, allHz := srv.Rates()
 			return api.Metrics{
 				Players:     len(srv.Snapshot()),
 				Connections: srv.ConnCount(),
 				SentBytes:   srv.SentBytes(),
 				AOIEnabled:  srv.AOIEnabled(),
+				TickHz:      tickHz,
+				AOIHz:       aoiHz,
+				AllHz:       allHz,
 			}
 		})
 	// 管理台"打开客户端/观战"按钮:在本机启动 ebiten 客户端窗口(与本 exe 同目录的 client 二进制)。
 	apiSrv.SetLauncher(launchClient(dialable(*addr)))
+	// 管理台"改帧率":运行时调场景的 tick / AOI / 全场频率。
+	apiSrv.SetRateSetter(srv.SetRates)
 
 	go func() {
 		log.Printf("HTTP API listening on %s", *httpAddr)

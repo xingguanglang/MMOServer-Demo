@@ -122,6 +122,12 @@ func (s *Server) ConnCount() int {
 // AOIEnabled 返回当前是否开启 AOI。
 func (s *Server) AOIEnabled() bool { return s.aoiEnabled }
 
+// SetRates 运行时修改场景帧率(tick / AOI 同步 / 全场同步,单位 Hz)。
+func (s *Server) SetRates(tickHz, aoiHz, allHz int) { s.scene.SetRates(tickHz, aoiHz, allHz) }
+
+// Rates 返回当前场景帧率。
+func (s *Server) Rates() (tickHz, aoiHz, allHz int) { return s.scene.Rates() }
+
 // SentBytes 返回累计发出的字节数(供算下行带宽)。
 func (s *Server) SentBytes() uint64 { return s.sentBytes.Load() }
 

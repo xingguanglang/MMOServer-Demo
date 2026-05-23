@@ -26,6 +26,9 @@ type Metrics struct {
 	Connections int    `json:"connections"` // 当前连接数
 	SentBytes   uint64 `json:"sentBytes"`   // 累计发出字节(前端按差值算带宽)
 	AOIEnabled  bool   `json:"aoiEnabled"`  // 是否开启 AOI
+	TickHz      int    `json:"tickHz"`      // 逻辑帧率
+	AOIHz       int    `json:"aoiHz"`       // AOI 同步频率
+	AllHz       int    `json:"allHz"`       // 全场同步频率
 }
 
 // PlayerPos 是 API 返回的单个玩家位置。
@@ -42,7 +45,8 @@ type Server struct {
 	snapshot func() []PlayerPos
 	metrics  func() Metrics
 
-	launch func(spectate bool) error // 可选:启动一个 ebiten 客户端窗口(由 cmd/server 注入)
+	launch   func(spectate bool) error    // 可选:启动一个 ebiten 客户端窗口(由 cmd/server 注入)
+	setRates func(tickHz, aoiHz, allHz int) // 可选:运行时改帧率(由 cmd/server 注入)
 
 	mu   sync.Mutex
 	bots map[int64]*client.Client // 经本 API 生成的玩家:playerID -> 连接,供 /api/move 控制
@@ -50,6 +54,9 @@ type Server struct {
 
 // SetLauncher 注入"启动客户端窗口"的能力(服务器在本机 exec 客户端二进制)。
 func (s *Server) SetLauncher(launch func(spectate bool) error) { s.launch = launch }
+
+// SetRateSetter 注入"运行时改帧率"的能力。
+func (s *Server) SetRateSetter(setRates func(tickHz, aoiHz, allHz int)) { s.setRates = setRates }
 
 // NewServer 创建 API。gameAddr 是游戏服务器的可拨号地址(如 127.0.0.1:9000);
 // snapshot 返回全场玩家位置,metrics 返回运行指标。
@@ -71,6 +78,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/move", s.handleMove)
 	mux.HandleFunc("POST /api/loadtest", s.handleLoadtest)
 	mux.HandleFunc("POST /api/launch", s.handleLaunch)
+	mux.HandleFunc("POST /api/rates", s.handleRates)
 	mux.HandleFunc("GET /api/players", s.handlePlayers)
 	mux.HandleFunc("GET /api/stats", s.handleStats)
 	return mux
@@ -252,6 +260,27 @@ func clampf(v, lo, hi float32) float32 {
 		return hi
 	}
 	return v
+}
+
+type ratesReq struct {
+	TickHz int `json:"tickHz"`
+	AOIHz  int `json:"aoiHz"`
+	AllHz  int `json:"allHz"`
+}
+
+// handleRates 运行时修改帧率(<1 的字段会被场景忽略,等于不变)。
+func (s *Server) handleRates(w http.ResponseWriter, r *http.Request) {
+	if s.setRates == nil {
+		http.Error(w, "rate control not available", http.StatusNotImplemented)
+		return
+	}
+	var req ratesReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+	s.setRates(req.TickHz, req.AOIHz, req.AllHz)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) handlePlayers(w http.ResponseWriter, r *http.Request) {
