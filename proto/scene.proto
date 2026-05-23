@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package game;
+
+option go_package = "github.com/xingguanglang/MMOServer-Demo/pkg/pb";
+
+// SceneService 是网关与场景服之间的跨进程接口。
+// 用一条双向流承载:上行(网关→场景)玩家事件,下行(场景→网关)要发给玩家的消息。
+service SceneService {
+  rpc Session(stream GatewayEvent) returns (stream SceneEvent);
+}
+
+// 玩家进入场景。
+message PlayerJoin {
+  int64 player_id = 1;
+  float x = 2;
+  float y = 3;
+}
+
+// 玩家移动。
+message PlayerMoveReq {
+  int64 player_id = 1;
+  float x = 2;
+  float y = 3;
+}
+
+// 玩家离开场景。
+message PlayerLeaveReq {
+  int64 player_id = 1;
+}
+
+// GatewayEvent 是网关上行给场景的事件(一次一种)。
+message GatewayEvent {
+  oneof event {
+    PlayerJoin join = 1;
+    PlayerMoveReq move = 2;
+    PlayerLeaveReq leave = 3;
+  }
+}
+
+// SceneEvent 是场景下行给网关的事件:把已编码好的消息(payload)发给 target_player_id。
+// 网关据此把 payload 套上协议帧、写给对应玩家的连接。
+message SceneEvent {
+  int64 target_player_id = 1;
+  uint32 msg_type = 2; // 复用 MsgId(StateSync / PlayerEnter / PlayerLeave)
+  bytes payload = 3;   // 已序列化的 protobuf 消息体
+}
