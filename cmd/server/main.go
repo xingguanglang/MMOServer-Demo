@@ -5,6 +5,10 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/xingguanglang/MMOServer-Demo/internal/api"
@@ -44,6 +48,9 @@ func main() {
 				AOIEnabled:  srv.AOIEnabled(),
 			}
 		})
+	// 管理台"打开客户端/观战"按钮:在本机启动 ebiten 客户端窗口(与本 exe 同目录的 client 二进制)。
+	apiSrv.SetLauncher(launchClient(dialable(*addr)))
+
 	go func() {
 		log.Printf("HTTP API listening on %s", *httpAddr)
 		if err := http.ListenAndServe(*httpAddr, apiSrv.Handler()); err != nil {
@@ -62,4 +69,25 @@ func dialable(listenAddr string) string {
 		return "127.0.0.1" + listenAddr
 	}
 	return listenAddr
+}
+
+// launchClient 返回一个启动器:exec 与本 server 同目录的客户端二进制(普通或观战),
+// 连到 gameAddr。需要先 `go build -o bin/ ./cmd/...`(server 和 client 都在 bin/)。
+func launchClient(gameAddr string) func(bool) error {
+	return func(spectate bool) error {
+		exe, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		name := "client"
+		if runtime.GOOS == "windows" {
+			name += ".exe"
+		}
+		path := filepath.Join(filepath.Dir(exe), name)
+		args := []string{"-addr", gameAddr}
+		if spectate {
+			args = append(args, "-spectate")
+		}
+		return exec.Command(path, args...).Start()
+	}
 }

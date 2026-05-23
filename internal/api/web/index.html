@@ -56,6 +56,11 @@
       <div class="card"><div class="label">Downstream</div><div class="value" id="m-bw">–</div></div>
       <div class="card"><div class="label">AOI Mode</div><div class="value" id="m-aoi">–</div></div>
     </div>
+    <div style="margin-top:18px; display:flex; gap:10px; align-items:center;">
+      <button class="go" id="open-client" style="max-width:200px">Open client window</button>
+      <button class="go" id="open-spectator" style="max-width:200px; background:#7a52e0">Open spectator window</button>
+      <span id="launch-out" style="color:#8a8aa0; font-size:13px;"></span>
+    </div>
   </section>
 
   <section id="spawn" class="panel">
@@ -142,6 +147,17 @@ document.getElementById("loadtest-form").onsubmit = e => {
   e.preventDefault();
   post("/api/loadtest", { count: num(e.target, "count") }, "loadtest-out");
 };
+
+// 一键打开本机客户端窗口(由服务器 exec)
+async function launch(spectate) {
+  const out = document.getElementById("launch-out");
+  try {
+    const r = await fetch("/api/launch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spectate }) });
+    out.textContent = r.ok ? "opened " + (await r.json()).opened : (r.status + " " + await r.text());
+  } catch (e) { out.textContent = "error: " + e; }
+}
+document.getElementById("open-client").onclick = () => launch(false);
+document.getElementById("open-spectator").onclick = () => launch(true);
 </script>
 </body>
 </html>

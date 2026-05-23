@@ -42,9 +42,14 @@ type Server struct {
 	snapshot func() []PlayerPos
 	metrics  func() Metrics
 
+	launch func(spectate bool) error // 可选:启动一个 ebiten 客户端窗口(由 cmd/server 注入)
+
 	mu   sync.Mutex
 	bots map[int64]*client.Client // 经本 API 生成的玩家:playerID -> 连接,供 /api/move 控制
 }
+
+// SetLauncher 注入"启动客户端窗口"的能力(服务器在本机 exec 客户端二进制)。
+func (s *Server) SetLauncher(launch func(spectate bool) error) { s.launch = launch }
 
 // NewServer 创建 API。gameAddr 是游戏服务器的可拨号地址(如 127.0.0.1:9000);
 // snapshot 返回全场玩家位置,metrics 返回运行指标。
@@ -65,9 +70,34 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/spawn", s.handleSpawn)
 	mux.HandleFunc("POST /api/move", s.handleMove)
 	mux.HandleFunc("POST /api/loadtest", s.handleLoadtest)
+	mux.HandleFunc("POST /api/launch", s.handleLaunch)
 	mux.HandleFunc("GET /api/players", s.handlePlayers)
 	mux.HandleFunc("GET /api/stats", s.handleStats)
 	return mux
+}
+
+type launchReq struct {
+	Spectate bool `json:"spectate"`
+}
+
+// handleLaunch 在服务器本机启动一个 ebiten 客户端窗口(普通或观战)。
+// 仅本地演示用;exec 的是固定的客户端二进制 + 固定参数,无注入风险。
+func (s *Server) handleLaunch(w http.ResponseWriter, r *http.Request) {
+	if s.launch == nil {
+		http.Error(w, "launcher not available", http.StatusNotImplemented)
+		return
+	}
+	var req launchReq
+	json.NewDecoder(r.Body).Decode(&req) // 空 body 也行,默认普通模式
+	if err := s.launch(req.Spectate); err != nil {
+		http.Error(w, "launch failed (build binaries first: go build -o bin/ ./cmd/...): "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	mode := "client"
+	if req.Spectate {
+		mode = "spectator"
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"opened": mode})
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {

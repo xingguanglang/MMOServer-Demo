@@ -136,6 +136,31 @@ func TestSpawnReturnsIDsAndMove(t *testing.T) {
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 
+// TestLaunch 验证 /api/launch 调用注入的启动器(用桩,不真开窗口)。
+func TestLaunch(t *testing.T) {
+	apiSrv := NewServer("127.0.0.1:1", func() []PlayerPos { return nil }, func() Metrics { return Metrics{} })
+	var called, gotSpectate bool
+	apiSrv.SetLauncher(func(spectate bool) error {
+		called = true
+		gotSpectate = spectate
+		return nil
+	})
+	ts := httptest.NewServer(apiSrv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/api/launch", "application/json", strings.NewReader(`{"spectate":true}`))
+	if err != nil {
+		t.Fatalf("launch request: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("launch status: %d", resp.StatusCode)
+	}
+	if !called || !gotSpectate {
+		t.Fatalf("launcher not called with spectate=true (called=%v spectate=%v)", called, gotSpectate)
+	}
+}
+
 // TestSpawnRejectsBadCount 验证参数校验。
 func TestSpawnRejectsBadCount(t *testing.T) {
 	apiSrv := NewServer("127.0.0.1:1", func() []PlayerPos { return nil }, func() Metrics { return Metrics{} })
