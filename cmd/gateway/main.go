@@ -7,11 +7,12 @@ import (
 	"log"
 	"net"
 
+	"github.com/xingguanglang/MMOServer-Demo/internal/config"
 	"github.com/xingguanglang/MMOServer-Demo/internal/gwserver"
 )
 
 func main() {
-	addr := flag.String("addr", ":9000", "player-facing TCP listen address")
+	addr := flag.String("addr", config.GameAddr, "player-facing TCP listen address")
 	sceneAddr := flag.String("scene", "127.0.0.1:9100", "scene server gRPC address")
 	flag.Parse()
 

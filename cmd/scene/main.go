@@ -7,13 +7,14 @@ import (
 	"log"
 	"net"
 
+	"github.com/xingguanglang/MMOServer-Demo/internal/config"
 	"github.com/xingguanglang/MMOServer-Demo/internal/sceneserver"
 	"github.com/xingguanglang/MMOServer-Demo/pkg/pb"
 	"google.golang.org/grpc"
 )
 
 func main() {
-	addr := flag.String("addr", ":9100", "scene gRPC listen address")
+	addr := flag.String("addr", config.SceneAddr, "scene gRPC listen address")
 	flag.Parse()
 
 	lis, err := net.Listen("tcp", *addr)

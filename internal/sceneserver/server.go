@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/xingguanglang/MMOServer-Demo/internal/aoi"
+	"github.com/xingguanglang/MMOServer-Demo/internal/config"
 	"github.com/xingguanglang/MMOServer-Demo/internal/scene"
 	"github.com/xingguanglang/MMOServer-Demo/pkg/pb"
 	"google.golang.org/protobuf/proto"
@@ -34,8 +35,8 @@ type Server struct {
 // New 创建场景服务,并启动 tick 主循环。
 func New() *Server {
 	s := &Server{}
-	aoiMgr := aoi.NewManager(0, 0, 256, 256, 32)
-	s.scene = scene.NewScene(aoiMgr, s, 30, 10, 10, true) // 30Hz tick;全场/AOI 均 10Hz
+	aoiMgr := aoi.NewManager(config.MapMinX, config.MapMinY, config.MapMaxX, config.MapMaxY, config.CellSize)
+	s.scene = scene.NewScene(aoiMgr, s, config.TickHz, config.AllHz, config.AOIHz, true)
 	go s.scene.Run()
 	return s
 }

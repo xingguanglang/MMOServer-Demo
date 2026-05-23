@@ -8,12 +8,13 @@ import (
 	"strings"
 
 	"github.com/xingguanglang/MMOServer-Demo/internal/api"
+	"github.com/xingguanglang/MMOServer-Demo/internal/config"
 	"github.com/xingguanglang/MMOServer-Demo/internal/gateway"
 )
 
 func main() {
-	addr := flag.String("addr", ":9000", "game server (TCP) listen address")
-	httpAddr := flag.String("http", ":8080", "HTTP control API listen address")
+	addr := flag.String("addr", config.GameAddr, "game server (TCP) listen address")
+	httpAddr := flag.String("http", config.HTTPAddr, "HTTP control API listen address")
 	aoi := flag.Bool("aoi", true, "enable AOI; set -aoi=false to broadcast to everyone (perf comparison)")
 	flag.Parse()
 

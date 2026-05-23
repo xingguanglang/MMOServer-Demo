@@ -14,18 +14,13 @@ import (
 	"net"
 	"sync"
 
+	"github.com/xingguanglang/MMOServer-Demo/internal/config"
 	"github.com/xingguanglang/MMOServer-Demo/internal/gateway"
 	"github.com/xingguanglang/MMOServer-Demo/internal/protocol"
 	"github.com/xingguanglang/MMOServer-Demo/pkg/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
-)
-
-// 出生点(与单体一致):统一原点,客户端登录后自行散开。
-const (
-	spawnX float32 = 0
-	spawnY float32 = 0
 )
 
 // Server 是分布式网关。
@@ -160,7 +155,7 @@ func (s *Server) handleLogin(in gateway.Inbound) {
 		}
 	}
 	s.upstream <- &pb.GatewayEvent{Event: &pb.GatewayEvent_Join{
-		Join: &pb.PlayerJoin{PlayerId: playerID, X: spawnX, Y: spawnY},
+		Join: &pb.PlayerJoin{PlayerId: playerID, X: config.SpawnX, Y: config.SpawnY},
 	}}
 }
 

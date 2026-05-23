@@ -15,16 +15,17 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
 	"github.com/xingguanglang/MMOServer-Demo/internal/client"
+	"github.com/xingguanglang/MMOServer-Demo/internal/config"
 )
 
 const (
-	mapSize    = 256                  // 世界尺寸(单位)
-	cellSize   = 32                   // AOI 格子边长,仅用于画网格
-	scale      = 2                    // 1 世界单位 = 2 像素
-	screenSize = mapSize * scale      // 窗口边长(像素)
-	tps        = 60.0                 // ebiten 默认每秒 60 帧
-	moveSpeed  = 90.0                 // 移动速度(世界单位/秒)
-	lerpAlpha  = 0.2                  // 插值系数:每帧朝目标靠近的比例
+	mapSize    = config.MapMaxX  // 世界尺寸(单位),与服务器一致
+	cellSize   = config.CellSize // AOI 格子边长,仅用于画网格
+	scale      = 2               // 1 世界单位 = 2 像素
+	screenSize = mapSize * scale // 窗口边长(像素)
+	tps        = 60.0            // ebiten 默认每秒 60 帧
+	moveSpeed  = 90.0            // 移动速度(世界单位/秒)
+	lerpAlpha  = 0.2             // 插值系数:每帧朝目标靠近的比例
 )
 
 // renderPlayer 是某个远程玩家的渲染状态:rx,ry 是当前画在屏幕上的位置,

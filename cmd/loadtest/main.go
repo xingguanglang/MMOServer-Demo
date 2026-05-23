@@ -14,9 +14,10 @@ import (
 	"time"
 
 	"github.com/xingguanglang/MMOServer-Demo/internal/client"
+	"github.com/xingguanglang/MMOServer-Demo/internal/config"
 )
 
-const mapSize = 256
+const mapSize = config.MapMaxX
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:9000", "server address")

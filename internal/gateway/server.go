@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/xingguanglang/MMOServer-Demo/internal/aoi"
+	"github.com/xingguanglang/MMOServer-Demo/internal/config"
 	"github.com/xingguanglang/MMOServer-Demo/internal/protocol"
 	"github.com/xingguanglang/MMOServer-Demo/internal/scene"
 	"github.com/xingguanglang/MMOServer-Demo/pkg/pb"
@@ -22,12 +23,6 @@ const (
 	MsgPlayerLeave   uint16 = 6
 	MsgStateSync     uint16 = 7
 	MsgSpectate      uint16 = 8
-)
-
-// 阶段 2 简化:所有玩家统一在原点出生。可视化客户端登录后会立刻发移动把自己散开。
-const (
-	spawnX float32 = 0
-	spawnY float32 = 0
 )
 
 // Server 是单体服务器:网关 + 登录 + 场景都在一个进程里。
@@ -52,8 +47,8 @@ func NewServer(aoiEnabled bool) *Server {
 		conns:      make(map[uint64]*Conn),
 		spectators: make(map[uint64]*Conn),
 	}
-	aoiMgr := aoi.NewManager(0, 0, 256, 256, 32)            // 256x256 地图,32 边长 → 8x8 格
-	s.scene = scene.NewScene(aoiMgr, s, 30, 10, 10, aoiEnabled) // 30Hz tick;全场/AOI 均 10Hz
+	aoiMgr := aoi.NewManager(config.MapMinX, config.MapMinY, config.MapMaxX, config.MapMaxY, config.CellSize)
+	s.scene = scene.NewScene(aoiMgr, s, config.TickHz, config.AllHz, config.AOIHz, aoiEnabled)
 	return s
 }
 
@@ -145,7 +140,7 @@ func (s *Server) handleLogin(in Inbound) {
 		Message:  "welcome " + req.GetUsername(),
 	})
 	// 进入场景:场景会通过 Notifier 回调,把视野内已有玩家以 PlayerEnter 推给它,反之亦然。
-	s.scene.Join(playerID, spawnX, spawnY)
+	s.scene.Join(playerID, config.SpawnX, config.SpawnY)
 	log.Printf("conn %d logged in as %q", in.Conn.ID(), req.GetUsername())
 }
 
