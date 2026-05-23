@@ -50,18 +50,20 @@ type Scene struct {
 	notifier Notifier
 
 	tickCount  int // tick 计数器
-	syncEvery  int // 每隔多少 tick 广播一次状态(30Hz tick / 10Hz sync = 3)
+	aoiEvery   int
+	allEvery   int
 	aoiEnabled bool
 }
 
-func NewScene(aoiMgr *aoi.Manager, notifier Notifier, tickHz int, syncHz int, aoiEnabled bool) *Scene {
+func NewScene(aoiMgr *aoi.Manager, notifier Notifier, tickHz int, allHz int, aoiHz int, aoiEnabled bool) *Scene {
 	return &Scene{
 		aoiMgr:     aoiMgr,
 		players:    make(map[int64]*Player),
 		inCh:       make(chan input, 1024),
 		tickRate:   time.Second / time.Duration(tickHz),
 		notifier:   notifier,
-		syncEvery:  tickHz / syncHz, // 30Hz tick / 10Hz sync = 3
+		aoiEvery:   tickHz / aoiHz, // 30Hz tick / 10Hz aoi = 3
+		allEvery:   tickHz / allHz, // 30Hz tick / 10Hz all = 3
 		aoiEnabled: aoiEnabled,
 	}
 }
@@ -86,8 +88,12 @@ func (s *Scene) Run() {
 func (s *Scene) tick() {
 	s.drainInputs()
 	s.tickCount++
-	if s.tickCount%s.syncEvery == 0 {
-		s.broadcastState()
+	if s.tickCount%s.aoiEvery == 0 && s.tickCount%s.allEvery != 0 { // AOI 同步和全量同步错开,避免同一 tick 里又发了 AOI 又发了全量
+		s.broadcastAOI()
+	}
+	if s.tickCount%s.allEvery == 0 {
+		s.broadcastAll()
+
 	}
 }
 func (s *Scene) drainInputs() {
@@ -100,17 +106,10 @@ func (s *Scene) drainInputs() {
 		}
 	}
 }
-func (s *Scene) broadcastState() {
-	all := make([]PlayerState, 0, len(s.players))
-	for _, p := range s.players {
-		all = append(all, PlayerState{ID: p.ID, X: p.X, Y: p.Y})
-	}
-	s.notifier.SyncAll(all)
-
+func (s *Scene) broadcastAOI() {
 	for id, p := range s.players {
 		var states []PlayerState
 		if s.aoiEnabled {
-			// AOI 开:只发视野内的人
 			viewers := s.aoiMgr.ViewPlayers(p.X, p.Y)
 			states = make([]PlayerState, 0, len(viewers))
 			for _, vid := range viewers {
@@ -122,11 +121,10 @@ func (s *Scene) broadcastState() {
 				}
 			}
 		} else {
-			// AOI 关:发全场(除自己)—— O(n²) 对照组
-			states = make([]PlayerState, 0, len(all))
-			for _, st := range all {
-				if st.ID != id {
-					states = append(states, st)
+			states = make([]PlayerState, 0, len(s.players))
+			for oid, other := range s.players {
+				if oid != id {
+					states = append(states, PlayerState{ID: other.ID, X: other.X, Y: other.Y})
 				}
 			}
 		}
@@ -134,6 +132,15 @@ func (s *Scene) broadcastState() {
 			s.notifier.SyncState(id, states)
 		}
 	}
+}
+
+// broadcastAll 给观战者发一份全场全量快照(低频,因为它最贵)。
+func (s *Scene) broadcastAll() {
+	all := make([]PlayerState, 0, len(s.players))
+	for _, p := range s.players {
+		all = append(all, PlayerState{ID: p.ID, X: p.X, Y: p.Y})
+	}
+	s.notifier.SyncAll(all)
 }
 func (s *Scene) apply(in input) {
 	switch in.kind {

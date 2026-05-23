@@ -93,7 +93,7 @@ func hasState(states []PlayerState, id int64) bool {
 
 func newTestScene(fake *fakeNotifier) *Scene {
 	mgr := aoi.NewManager(0, 0, 256, 256, 32) // 8x8 格
-	return NewScene(mgr, fake, 30, 10, true)  // 30Hz tick,10Hz 同步,AOI 开
+	return NewScene(mgr, fake, 30, 3, 10, true) // 30Hz tick;全场 3Hz、AOI 10Hz,AOI 开
 }
 
 // TestJoinNotifiesMutualEnter:玩家进场时,与视野内已有玩家互相收到"进入视野"。
@@ -162,7 +162,7 @@ func TestStateSyncContainsViewers(t *testing.T) {
 	s.Join(2, 20, 20)   // 与 1 同格
 	s.Join(3, 200, 200) // 远处
 	s.drainInputs()
-	s.broadcastState() // 直接触发一次状态广播
+	s.broadcastAOI() // 直接触发一次 AOI 状态广播
 
 	sync1, ok := syncFor(fake.syncs, 1)
 	if !ok {

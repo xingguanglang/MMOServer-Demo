@@ -53,7 +53,7 @@ func NewServer(aoiEnabled bool) *Server {
 		spectators: make(map[uint64]*Conn),
 	}
 	aoiMgr := aoi.NewManager(0, 0, 256, 256, 32)            // 256x256 地图,32 边长 → 8x8 格
-	s.scene = scene.NewScene(aoiMgr, s, 30, 10, aoiEnabled) // s 实现 scene.Notifier;30Hz tick,10Hz 同步
+	s.scene = scene.NewScene(aoiMgr, s, 30, 3, 10, aoiEnabled) // 30Hz tick;全场 3Hz、AOI 10Hz
 	return s
 }
 

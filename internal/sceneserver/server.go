@@ -35,7 +35,7 @@ type Server struct {
 func New() *Server {
 	s := &Server{}
 	aoiMgr := aoi.NewManager(0, 0, 256, 256, 32)
-	s.scene = scene.NewScene(aoiMgr, s, 30, 10, true)
+	s.scene = scene.NewScene(aoiMgr, s, 30, 3, 10, true) // s 实现 scene.Notifier;30Hz tick,10Hz 同步
 	go s.scene.Run()
 	return s
 }
