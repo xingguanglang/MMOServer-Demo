@@ -29,9 +29,11 @@ const (
 )
 
 // renderPlayer 是某个远程玩家的渲染状态:rx,ry 是当前画在屏幕上的位置,
-// 每帧朝网络给的目标位置插值靠近。
+// 每帧朝网络给的目标位置插值靠近;near 表示它当前在不在我的 AOI 视野内
+//(在 → 高频更新、亮色;不在 → 只靠全局低频快照、暗色)。
 type renderPlayer struct {
 	rx, ry float32
+	near   bool
 }
 
 // Game 是 ebiten 的游戏对象:持有网络客户端 + 本地渲染状态。
@@ -80,36 +82,58 @@ func (g *Game) updateSelf() {
 	}
 }
 
-// interpolate 把远程玩家朝服务器给的目标位置插值,得到平滑移动。
+// interpolate 维护全场所有玩家的渲染位置:
+//   - 全局快照(MinimapSync,低频)打底,覆盖到所有人 → 远处玩家也显示;
+//   - AOI 快照(StateSync,高频)覆盖近处玩家的目标,使其更新更快、标记为 near。
+// 每帧把渲染位置朝目标插值,平滑移动。
 func (g *Game) interpolate() {
-	targets := g.c.Players()
-	seen := make(map[int64]bool, len(targets))
-	for _, p := range targets {
-		seen[p.ID] = true
-		rp := g.rendered[p.ID]
+	type target struct {
+		x, y float32
+		near bool
+	}
+	targets := make(map[int64]target)
+	for _, p := range g.c.Minimap() { // 全局:所有人,低频
+		targets[p.ID] = target{p.X, p.Y, false}
+	}
+	for _, p := range g.c.Players() { // AOI:近处,高频(覆盖)
+		targets[p.ID] = target{p.X, p.Y, true}
+	}
+
+	selfID := g.c.PlayerID()
+	for id, t := range targets {
+		if id == selfID {
+			continue // 自己单独画
+		}
+		rp := g.rendered[id]
 		if rp == nil {
-			g.rendered[p.ID] = &renderPlayer{rx: p.X, ry: p.Y} // 新出现:直接落到目标位置
+			g.rendered[id] = &renderPlayer{rx: t.x, ry: t.y, near: t.near}
 			continue
 		}
-		rp.rx += (p.X - rp.rx) * lerpAlpha
-		rp.ry += (p.Y - rp.ry) * lerpAlpha
+		rp.rx += (t.x - rp.rx) * lerpAlpha
+		rp.ry += (t.y - rp.ry) * lerpAlpha
+		rp.near = t.near
 	}
-	// 清掉已离开视野 / 离场的玩家。
+	// 清掉离场的玩家(既不在 AOI 也不在全局快照里)。
 	for id := range g.rendered {
-		if !seen[id] {
+		if _, ok := targets[id]; !ok || id == selfID {
 			delete(g.rendered, id)
 		}
 	}
 }
 
-// Draw 每帧渲染。
+// Draw 每帧渲染:主地图显示全场所有人——近处(AOI,高频)亮色,远处(全局,低频)暗色。
 func (g *Game) Draw(screen *ebiten.Image) {
 	screen.Fill(color.RGBA{20, 20, 30, 255})
 	drawGrid(screen)
 
-	// 其他玩家:灰白色。
+	near := 0
 	for _, rp := range g.rendered {
-		drawPlayer(screen, rp.rx, rp.ry, color.RGBA{210, 210, 210, 255})
+		clr := color.RGBA{110, 110, 130, 255} // 远处:暗灰(全局低频)
+		if rp.near {
+			clr = color.RGBA{230, 230, 230, 255} // 近处:亮白(AOI 高频)
+			near++
+		}
+		drawPlayer(screen, rp.rx, rp.ry, clr)
 	}
 
 	if g.spectate {
@@ -118,29 +142,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 	// 自己:绿色。
 	drawPlayer(screen, g.selfX, g.selfY, color.RGBA{90, 220, 90, 255})
-	g.drawMinimap(screen)
 	ebitenutil.DebugPrint(screen, fmt.Sprintf(
-		"id=%d  pos=(%.0f,%.0f)  others in view=%d\nWASD / arrows to move",
-		g.c.PlayerID(), g.selfX, g.selfY, len(g.rendered)))
-}
-
-// drawMinimap 在右上角画一个小地图,显示全场所有玩家(低频 MinimapSync),
-// 即使他们不在 AOI 视野内。自己用绿色高亮。
-func (g *Game) drawMinimap(screen *ebiten.Image) {
-	const mm = 96 // 小地图边长(像素)
-	ox, oy := float32(screenSize-mm-6), float32(6)
-
-	vector.DrawFilledRect(screen, ox, oy, mm, mm, color.RGBA{0, 0, 0, 160}, false)
-	vector.StrokeRect(screen, ox, oy, mm, mm, 1, color.RGBA{120, 120, 140, 255}, false)
-
-	scaleMM := float32(mm) / float32(mapSize)
-	for _, p := range g.c.Minimap() {
-		clr := color.RGBA{200, 80, 80, 255} // 别人:红
-		if p.ID == g.c.PlayerID() {
-			clr = color.RGBA{90, 220, 90, 255} // 自己:绿
-		}
-		vector.DrawFilledCircle(screen, ox+p.X*scaleMM, oy+p.Y*scaleMM, 1.5, clr, false)
-	}
+		"id=%d  pos=(%.0f,%.0f)  near(AOI)=%d  far(global)=%d\nWASD / arrows to move",
+		g.c.PlayerID(), g.selfX, g.selfY, near, len(g.rendered)-near))
 }
 
 func (g *Game) Layout(int, int) (int, int) { return screenSize, screenSize }
