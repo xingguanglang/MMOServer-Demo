@@ -62,6 +62,10 @@
       <button class="go" id="open-spectator" style="max-width:200px; background:#7a52e0">Open spectator window</button>
       <span id="launch-out" style="color:#8a8aa0; font-size:13px;"></span>
     </div>
+    <div style="margin-top:10px; display:flex; gap:10px; align-items:center;">
+      <button class="go" id="toggle-aoi" style="max-width:200px; background:#e0683c">Toggle AOI</button>
+      <span id="aoi-out" style="color:#8a8aa0; font-size:13px;">turn AOI off → broadcast to all → bandwidth jumps</span>
+    </div>
     <p id="rates-line" style="margin-top:16px; color:#8a8aa0; font-size:13px;">rates: –</p>
   </section>
 
@@ -133,6 +137,7 @@ async function refresh() {
     const aoi = document.getElementById("m-aoi");
     aoi.textContent = m.aoiEnabled ? "ON" : "OFF (broadcast all)";
     aoi.className = "value " + (m.aoiEnabled ? "on" : "off");
+    lastAOI = m.aoiEnabled;
     document.getElementById("rates-line").textContent =
       `rates: tick ${m.tickHz}Hz · AOI ${m.aoiHz}Hz · full ${m.allHz}Hz`;
     const rf = document.getElementById("rates-form");
@@ -143,6 +148,7 @@ async function refresh() {
   } catch (e) { /* server down */ }
 }
 let ratesInit = false;
+let lastAOI = true;
 setInterval(refresh, 1000); refresh();
 
 // 表单 → POST JSON
@@ -182,6 +188,15 @@ document.getElementById("open-spectator").onclick = () => launch(true);
 document.getElementById("rates-form").onsubmit = e => {
   e.preventDefault();
   post("/api/rates", { tickHz: num(e.target, "tickHz"), aoiHz: num(e.target, "aoiHz"), allHz: num(e.target, "allHz") }, "rates-out");
+};
+
+// 切换 AOI(发当前状态的相反值)
+document.getElementById("toggle-aoi").onclick = async () => {
+  const out = document.getElementById("aoi-out");
+  try {
+    const r = await fetch("/api/aoi", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !lastAOI }) });
+    out.textContent = r.ok ? "AOI → " + ((await r.json()).aoiEnabled ? "ON" : "OFF") : (r.status + " " + await r.text());
+  } catch (e) { out.textContent = "error: " + e; }
 };
 </script>
 </body>

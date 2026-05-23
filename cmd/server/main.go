@@ -56,6 +56,8 @@ func main() {
 	apiSrv.SetLauncher(launchClient(dialable(*addr)))
 	// 管理台"改帧率":运行时调场景的 tick / AOI / 全场频率。
 	apiSrv.SetRateSetter(srv.SetRates)
+	// 管理台"AOI 开关":运行时切 AOI(关 = 全场广播)。
+	apiSrv.SetAOISetter(srv.SetAOIEnabled)
 
 	go func() {
 		log.Printf("HTTP API listening on %s", *httpAddr)

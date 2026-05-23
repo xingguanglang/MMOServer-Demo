@@ -45,8 +45,9 @@ type Server struct {
 	snapshot func() []PlayerPos
 	metrics  func() Metrics
 
-	launch   func(spectate bool) error    // 可选:启动一个 ebiten 客户端窗口(由 cmd/server 注入)
+	launch   func(spectate bool) error      // 可选:启动一个 ebiten 客户端窗口(由 cmd/server 注入)
 	setRates func(tickHz, aoiHz, allHz int) // 可选:运行时改帧率(由 cmd/server 注入)
+	setAOI   func(enabled bool)             // 可选:运行时切 AOI(由 cmd/server 注入)
 
 	mu   sync.Mutex
 	bots map[int64]*client.Client // 经本 API 生成的玩家:playerID -> 连接,供 /api/move 控制
@@ -57,6 +58,9 @@ func (s *Server) SetLauncher(launch func(spectate bool) error) { s.launch = laun
 
 // SetRateSetter 注入"运行时改帧率"的能力。
 func (s *Server) SetRateSetter(setRates func(tickHz, aoiHz, allHz int)) { s.setRates = setRates }
+
+// SetAOISetter 注入"运行时切 AOI"的能力。
+func (s *Server) SetAOISetter(setAOI func(enabled bool)) { s.setAOI = setAOI }
 
 // NewServer 创建 API。gameAddr 是游戏服务器的可拨号地址(如 127.0.0.1:9000);
 // snapshot 返回全场玩家位置,metrics 返回运行指标。
@@ -79,6 +83,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/loadtest", s.handleLoadtest)
 	mux.HandleFunc("POST /api/launch", s.handleLaunch)
 	mux.HandleFunc("POST /api/rates", s.handleRates)
+	mux.HandleFunc("POST /api/aoi", s.handleAOI)
 	mux.HandleFunc("GET /api/players", s.handlePlayers)
 	mux.HandleFunc("GET /api/stats", s.handleStats)
 	return mux
@@ -281,6 +286,25 @@ func (s *Server) handleRates(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setRates(req.TickHz, req.AOIHz, req.AllHz)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+type aoiReq struct {
+	Enabled bool `json:"enabled"`
+}
+
+// handleAOI 运行时开/关 AOI(关 = 退回全场广播,带宽明显变大)。
+func (s *Server) handleAOI(w http.ResponseWriter, r *http.Request) {
+	if s.setAOI == nil {
+		http.Error(w, "AOI control not available", http.StatusNotImplemented)
+		return
+	}
+	var req aoiReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+	s.setAOI(req.Enabled)
+	writeJSON(w, http.StatusOK, map[string]bool{"aoiEnabled": req.Enabled})
 }
 
 func (s *Server) handlePlayers(w http.ResponseWriter, r *http.Request) {

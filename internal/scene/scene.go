@@ -56,22 +56,28 @@ type Scene struct {
 	tickHz     atomic.Int64
 	aoiHz      atomic.Int64
 	allHz      atomic.Int64
-	aoiEnabled bool
+	aoiEnabled atomic.Bool // 运行时可切:false 时 broadcastAOI 退回全场广播
 }
 
 func NewScene(aoiMgr *aoi.Manager, notifier Notifier, tickHz int, allHz int, aoiHz int, aoiEnabled bool) *Scene {
 	s := &Scene{
-		aoiMgr:     aoiMgr,
-		players:    make(map[int64]*Player),
-		inCh:       make(chan input, 1024),
-		notifier:   notifier,
-		aoiEnabled: aoiEnabled,
+		aoiMgr:   aoiMgr,
+		players:  make(map[int64]*Player),
+		inCh:     make(chan input, 1024),
+		notifier: notifier,
 	}
 	s.tickHz.Store(int64(tickHz))
 	s.aoiHz.Store(int64(aoiHz))
 	s.allHz.Store(int64(allHz))
+	s.aoiEnabled.Store(aoiEnabled)
 	return s
 }
+
+// SetAOIEnabled 运行时切换 AOI(false = 退回全场广播,用于对比)。
+func (s *Scene) SetAOIEnabled(enabled bool) { s.aoiEnabled.Store(enabled) }
+
+// AOIEnabled 返回当前是否开启 AOI。
+func (s *Scene) AOIEnabled() bool { return s.aoiEnabled.Load() }
 
 // SetRates 运行时修改帧率(<1 的值忽略)。
 func (s *Scene) SetRates(tickHz, aoiHz, allHz int) {
@@ -152,7 +158,7 @@ func (s *Scene) drainInputs() {
 func (s *Scene) broadcastAOI() {
 	for id, p := range s.players {
 		var states []PlayerState
-		if s.aoiEnabled {
+		if s.aoiEnabled.Load() {
 			viewers := s.aoiMgr.ViewPlayers(p.X, p.Y)
 			states = make([]PlayerState, 0, len(viewers))
 			for _, vid := range viewers {

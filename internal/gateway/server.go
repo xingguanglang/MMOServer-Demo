@@ -40,8 +40,7 @@ type Server struct {
 	nextID       uint64
 	lastSnapshot []scene.PlayerState // 最近一次全量状态快照,供 HTTP API 查询
 
-	aoiEnabled bool          // 当前是否开启 AOI(供管理台显示模式)
-	sentBytes  atomic.Uint64 // 累计发出的字节数(供管理台算带宽)
+	sentBytes atomic.Uint64 // 累计发出的字节数(供管理台算带宽)
 }
 
 // NewServer 创建服务器,并把场景挂上(场景以本 Server 作为 Notifier)。
@@ -51,7 +50,6 @@ func NewServer(aoiEnabled bool) *Server {
 		inbound:    make(chan Inbound, 1024),
 		conns:      make(map[uint64]*Conn),
 		spectators: make(map[uint64]*Conn),
-		aoiEnabled: aoiEnabled,
 	}
 	aoiMgr := aoi.NewManager(config.MapMinX, config.MapMinY, config.MapMaxX, config.MapMaxY, config.CellSize)
 	s.scene = scene.NewScene(aoiMgr, s, config.TickHz, config.AllHz, config.AOIHz, aoiEnabled)
@@ -120,7 +118,10 @@ func (s *Server) ConnCount() int {
 }
 
 // AOIEnabled 返回当前是否开启 AOI。
-func (s *Server) AOIEnabled() bool { return s.aoiEnabled }
+func (s *Server) AOIEnabled() bool { return s.scene.AOIEnabled() }
+
+// SetAOIEnabled 运行时切换 AOI。
+func (s *Server) SetAOIEnabled(enabled bool) { s.scene.SetAOIEnabled(enabled) }
 
 // SetRates 运行时修改场景帧率(tick / AOI 同步 / 全场同步,单位 Hz)。
 func (s *Server) SetRates(tickHz, aoiHz, allHz int) { s.scene.SetRates(tickHz, aoiHz, allHz) }
