@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -65,6 +66,75 @@ func TestSpawnAndQuery(t *testing.T) {
 	}
 	t.Fatal("expected at least 3 players via /api/players")
 }
+
+// TestSpawnReturnsIDsAndMove:spawn 返回 id;再用 /api/move 把该玩家推到精确坐标,
+// 通过 /api/players 验证它确实到了新位置。
+func TestSpawnReturnsIDsAndMove(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	gw := gateway.NewServer(true)
+	go gw.Serve(ln)
+
+	apiSrv := NewServer(ln.Addr().String(), func() []PlayerPos {
+		snap := gw.Snapshot()
+		out := make([]PlayerPos, 0, len(snap))
+		for _, p := range snap {
+			out = append(out, PlayerPos{ID: p.ID, X: p.X, Y: p.Y})
+		}
+		return out
+	})
+	ts := httptest.NewServer(apiSrv.Handler())
+	defer ts.Close()
+
+	// spawn 一个,拿到它的 id。
+	resp, err := http.Post(ts.URL+"/api/spawn", "application/json",
+		strings.NewReader(`{"count":1,"x":10,"y":10}`))
+	if err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	var spawnResp struct {
+		Spawned int     `json:"spawned"`
+		IDs     []int64 `json:"ids"`
+	}
+	json.NewDecoder(resp.Body).Decode(&spawnResp)
+	resp.Body.Close()
+	if len(spawnResp.IDs) != 1 {
+		t.Fatalf("expected 1 id, got %v", spawnResp.IDs)
+	}
+	id := spawnResp.IDs[0]
+
+	// 把它推到精确坐标 (50,60)。
+	mvResp, err := http.Post(ts.URL+"/api/move", "application/json",
+		strings.NewReader(`{"id":`+itoa(id)+`,"x":50,"y":60}`))
+	if err != nil {
+		t.Fatalf("move: %v", err)
+	}
+	mvResp.Body.Close()
+	if mvResp.StatusCode != http.StatusOK {
+		t.Fatalf("move status: %d", mvResp.StatusCode)
+	}
+
+	// 验证它到了 (50,60)。
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		r, _ := http.Get(ts.URL + "/api/players")
+		var players []PlayerPos
+		json.NewDecoder(r.Body).Decode(&players)
+		r.Body.Close()
+		for _, p := range players {
+			if p.ID == id && p.X == 50 && p.Y == 60 {
+				return // 通过
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("玩家未移动到 /api/move 指定的坐标")
+}
+
+func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 
 // TestSpawnRejectsBadCount 验证参数校验。
 func TestSpawnRejectsBadCount(t *testing.T) {

@@ -139,16 +139,19 @@ go run ./cmd/client -name alice    # 玩家照常连网关
 
 服务器还开放一个小的 HTTP/JSON API(默认 `:8080`),让外部工具不走二进制协议就能驱动和观察世界:
 
-| 方法与路径          | 请求体                            | 说明                          |
-| ------------------ | --------------------------------- | ----------------------------- |
-| `POST /api/spawn`  | `{"count":50,"x":128,"y":128}`    | 在 (x, y) 附近生成 count 个玩家 |
-| `GET /api/players` | —                                 | 全场所有玩家位置(JSON)        |
-| `GET /api/stats`   | —                                 | `{"players": N}`              |
+| 方法与路径          | 请求体                            | 说明                                   |
+| ------------------ | --------------------------------- | -------------------------------------- |
+| `POST /api/spawn`  | `{"count":50,"x":128,"y":128}`    | 在精确 (x, y) 生成 count 个玩家,返回其 `ids` |
+| `POST /api/move`   | `{"id":3,"x":50,"y":60}`          | 把 API 生成的某玩家直接推到精确 (x, y)     |
+| `GET /api/players` | —                                 | 全场所有玩家位置(JSON)                 |
+| `GET /api/stats`   | —                                 | `{"players": N}`                       |
 
-生成的玩家是真实 TCP 客户端,所以也会出现在观战窗口里。
+生成的玩家是真实 TCP 客户端,所以也会出现在每个客户端的地图上。
 
 ```bash
-curl -X POST localhost:8080/api/spawn -d '{"count":50,"x":128,"y":128}'
+# 生成一个并拿到 id,再把坐标推给它
+curl -s -X POST localhost:8080/api/spawn -d '{"count":1,"x":128,"y":128}'   # -> {"spawned":1,"ids":[3]}
+curl -X POST localhost:8080/api/move -d '{"id":3,"x":50,"y":60}'
 curl localhost:8080/api/players
 ```
 

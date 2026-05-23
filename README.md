@@ -157,16 +157,19 @@ contract and rationale.
 The server also exposes a small HTTP/JSON API (default `:8080`) so external tools
 can drive and observe the world without speaking the binary protocol:
 
-| Method & path      | Body                              | Description                       |
-| ------------------ | --------------------------------- | --------------------------------- |
-| `POST /api/spawn`  | `{"count":50,"x":128,"y":128}`    | Spawn `count` players near (x, y) |
-| `GET /api/players` | —                                 | All players' positions as JSON    |
-| `GET /api/stats`   | —                                 | `{"players": N}`                  |
+| Method & path      | Body                              | Description                                          |
+| ------------------ | --------------------------------- | ---------------------------------------------------- |
+| `POST /api/spawn`  | `{"count":50,"x":128,"y":128}`    | Spawn `count` players at (x, y); returns their `ids` |
+| `POST /api/move`   | `{"id":3,"x":50,"y":60}`          | Push an API-spawned player to exact (x, y)           |
+| `GET /api/players` | —                                 | All players' positions as JSON                       |
+| `GET /api/stats`   | —                                 | `{"players": N}`                                     |
 
-Spawned players are real TCP clients, so they also appear in the spectator view.
+Spawned players are real TCP clients, so they also appear on every client's map.
 
 ```bash
-curl -X POST localhost:8080/api/spawn -d '{"count":50,"x":128,"y":128}'
+# spawn one and capture its id, then push a coordinate to it
+curl -s -X POST localhost:8080/api/spawn -d '{"count":1,"x":128,"y":128}'   # -> {"spawned":1,"ids":[3]}
+curl -X POST localhost:8080/api/move -d '{"id":3,"x":50,"y":60}'
 curl localhost:8080/api/players
 ```
 

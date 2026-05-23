@@ -1,14 +1,14 @@
 // Package api exposes a small HTTP/JSON control API over the game server:
-// spawn players at a coordinate, and query where everyone is. It lets
-// external tools drive and observe the world without speaking the binary
-// TCP protocol.
+// spawn players at a coordinate, push exact coordinates to them, and query
+// where everyone is. It lets external tools drive and observe the world
+// without speaking the binary TCP protocol.
 package api
 
 import (
 	"encoding/json"
 	"log"
-	"math/rand"
 	"net/http"
+	"sync"
 
 	"github.com/xingguanglang/MMOServer-Demo/internal/client"
 )
@@ -25,17 +25,25 @@ type PlayerPos struct {
 type Server struct {
 	gameAddr string
 	snapshot func() []PlayerPos
+
+	mu   sync.Mutex
+	bots map[int64]*client.Client // 经本 API 生成的玩家:playerID -> 连接,供 /api/move 控制
 }
 
 // NewServer 创建 API。gameAddr 是游戏服务器的可拨号地址(如 127.0.0.1:9000)。
 func NewServer(gameAddr string, snapshot func() []PlayerPos) *Server {
-	return &Server{gameAddr: gameAddr, snapshot: snapshot}
+	return &Server{
+		gameAddr: gameAddr,
+		snapshot: snapshot,
+		bots:     make(map[int64]*client.Client),
+	}
 }
 
 // Handler 返回路由好的 http.Handler。
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/spawn", s.handleSpawn)
+	mux.HandleFunc("POST /api/move", s.handleMove)
 	mux.HandleFunc("GET /api/players", s.handlePlayers)
 	mux.HandleFunc("GET /api/stats", s.handleStats)
 	return mux
@@ -47,7 +55,7 @@ type spawnReq struct {
 	Y     float32 `json:"y"`
 }
 
-// handleSpawn 在 (x,y) 附近生成 count 个玩家(真实 TCP 连接)。
+// handleSpawn 在精确坐标 (x,y) 生成 count 个玩家,返回它们的 playerID。
 func (s *Server) handleSpawn(w http.ResponseWriter, r *http.Request) {
 	var req spawnReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -59,31 +67,64 @@ func (s *Server) handleSpawn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spawned := 0
+	ids := make([]int64, 0, req.Count)
 	for i := 0; i < req.Count; i++ {
-		if err := s.spawnBot(req.X, req.Y); err != nil {
+		id, err := s.spawnBot(req.X, req.Y)
+		if err != nil {
 			log.Printf("api: spawn bot failed: %v", err)
 			continue
 		}
-		spawned++
+		ids = append(ids, id)
 	}
-	writeJSON(w, http.StatusOK, map[string]int{"spawned": spawned})
+	writeJSON(w, http.StatusOK, map[string]any{"spawned": len(ids), "ids": ids})
 }
 
-// spawnBot 连上游戏服务器、登录,并移动到 (x,y) 附近一个随机小偏移处。
-// 连接保持打开(Run 在后台读),因此该玩家会持续存在于世界里。
-func (s *Server) spawnBot(x, y float32) error {
+// spawnBot 连上游戏服务器、登录,放到精确坐标 (x,y),返回服务器分配的 playerID。
+// 连接保持打开(Run 在后台读),并记入 bots 表供后续 /api/move 控制。
+func (s *Server) spawnBot(x, y float32) (int64, error) {
 	c, err := client.Dial(s.gameAddr)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if err := c.Login("api-bot"); err != nil {
 		c.Close()
-		return err
+		return 0, err
 	}
 	go c.Run()
-	c.Move(x+float32(rand.Intn(21)-10), y+float32(rand.Intn(21)-10))
-	return nil
+	c.Move(x, y)
+
+	id := c.PlayerID()
+	s.mu.Lock()
+	s.bots[id] = c
+	s.mu.Unlock()
+	return id, nil
+}
+
+type moveReq struct {
+	ID int64   `json:"id"`
+	X  float32 `json:"x"`
+	Y  float32 `json:"y"`
+}
+
+// handleMove 把某个由本 API 生成的玩家直接挪到精确坐标 (x,y)。
+func (s *Server) handleMove(w http.ResponseWriter, r *http.Request) {
+	var req moveReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	c := s.bots[req.ID]
+	s.mu.Unlock()
+	if c == nil {
+		http.Error(w, "unknown player id (only API-spawned players can be moved)", http.StatusNotFound)
+		return
+	}
+	if err := c.Move(req.X, req.Y); err != nil {
+		http.Error(w, "move failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": req.ID, "x": req.X, "y": req.Y})
 }
 
 func (s *Server) handlePlayers(w http.ResponseWriter, r *http.Request) {
