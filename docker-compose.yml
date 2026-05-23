@@ -1,0 +1,8 @@
+services:
+  server:
+    build: .
+    ports:
+      - "9000:9000"
+    # 客户端 / 压测机器人在宿主机运行,连 127.0.0.1:9000:
+    #   go run ./cmd/client -spectate
+    #   go run ./cmd/loadtest -n 500
