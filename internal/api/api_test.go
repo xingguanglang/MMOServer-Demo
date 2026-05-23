@@ -34,7 +34,7 @@ func TestSpawnAndQuery(t *testing.T) {
 			out = append(out, PlayerPos{ID: p.ID, X: p.X, Y: p.Y})
 		}
 		return out
-	})
+	}, func() Metrics { return Metrics{} })
 	ts := httptest.NewServer(apiSrv.Handler())
 	defer ts.Close()
 
@@ -85,7 +85,7 @@ func TestSpawnReturnsIDsAndMove(t *testing.T) {
 			out = append(out, PlayerPos{ID: p.ID, X: p.X, Y: p.Y})
 		}
 		return out
-	})
+	}, func() Metrics { return Metrics{} })
 	ts := httptest.NewServer(apiSrv.Handler())
 	defer ts.Close()
 
@@ -138,7 +138,7 @@ func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 
 // TestSpawnRejectsBadCount 验证参数校验。
 func TestSpawnRejectsBadCount(t *testing.T) {
-	apiSrv := NewServer("127.0.0.1:1", func() []PlayerPos { return nil })
+	apiSrv := NewServer("127.0.0.1:1", func() []PlayerPos { return nil }, func() Metrics { return Metrics{} })
 	ts := httptest.NewServer(apiSrv.Handler())
 	defer ts.Close()
 

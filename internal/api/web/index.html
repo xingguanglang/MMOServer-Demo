@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MMOServer-Demo · Admin Console</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+         background: #14141e; color: #e6e6ee; }
+  header { padding: 16px 24px; border-bottom: 1px solid #2a2a3a; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header span { color: #8a8aa0; font-size: 13px; }
+  nav { display: flex; gap: 8px; padding: 12px 24px; border-bottom: 1px solid #2a2a3a; }
+  nav button { background: #20202e; color: #cfcfe0; border: 1px solid #33334a;
+               padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+  nav button.active { background: #3b6ef0; color: #fff; border-color: #3b6ef0; }
+  main { padding: 24px; max-width: 720px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .card { background: #1c1c2a; border: 1px solid #2a2a3a; border-radius: 10px; padding: 18px; }
+  .card .label { color: #8a8aa0; font-size: 13px; }
+  .card .value { font-size: 30px; font-weight: 700; margin-top: 6px; }
+  .card .value.on { color: #5ed16e; }
+  .card .value.off { color: #e0683c; }
+  form { display: grid; gap: 12px; max-width: 360px; }
+  label { display: grid; gap: 4px; font-size: 13px; color: #b8b8cc; }
+  input { background: #20202e; border: 1px solid #33334a; color: #e6e6ee;
+          padding: 8px 10px; border-radius: 6px; font-size: 14px; }
+  .go { background: #3b6ef0; color: #fff; border: none; padding: 10px;
+        border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; }
+  pre { background: #101018; border: 1px solid #2a2a3a; border-radius: 6px;
+        padding: 12px; color: #9fd0a0; font-size: 13px; min-height: 20px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>MMOServer-Demo · Admin Console</h1>
+  <span>control the world over HTTP — spawn / move / load test, and watch live metrics</span>
+</header>
+
+<nav>
+  <button data-tab="dashboard" class="active">Dashboard</button>
+  <button data-tab="spawn">Spawn</button>
+  <button data-tab="move">Move</button>
+  <button data-tab="loadtest">Load Test</button>
+</nav>
+
+<main>
+  <section id="dashboard" class="panel active">
+    <div class="cards">
+      <div class="card"><div class="label">Players</div><div class="value" id="m-players">–</div></div>
+      <div class="card"><div class="label">Connections</div><div class="value" id="m-conns">–</div></div>
+      <div class="card"><div class="label">Downstream</div><div class="value" id="m-bw">–</div></div>
+      <div class="card"><div class="label">AOI Mode</div><div class="value" id="m-aoi">–</div></div>
+    </div>
+  </section>
+
+  <section id="spawn" class="panel">
+    <form id="spawn-form">
+      <label>Count <input name="count" type="number" value="1" min="1" max="1000"></label>
+      <label>X <input name="x" type="number" value="128" step="any"></label>
+      <label>Y <input name="y" type="number" value="128" step="any"></label>
+      <button class="go" type="submit">Spawn at (x, y)</button>
+    </form>
+    <pre id="spawn-out"></pre>
+  </section>
+
+  <section id="move" class="panel">
+    <form id="move-form">
+      <label>Player ID <input name="id" type="number" value="1"></label>
+      <label>X <input name="x" type="number" value="50" step="any"></label>
+      <label>Y <input name="y" type="number" value="60" step="any"></label>
+      <button class="go" type="submit">Move to (x, y)</button>
+    </form>
+    <pre id="move-out"></pre>
+  </section>
+
+  <section id="loadtest" class="panel">
+    <form id="loadtest-form">
+      <label>Bots <input name="count" type="number" value="200" min="1" max="2000"></label>
+      <button class="go" type="submit">Start load test</button>
+    </form>
+    <pre id="loadtest-out"></pre>
+  </section>
+</main>
+
+<script>
+// 标签页切换:点按钮显示对应面板
+document.querySelectorAll("nav button").forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById(btn.dataset.tab).classList.add("active");
+  };
+});
+
+// 实时指标:每秒拉一次 /api/metrics,带宽由发出字节的差值算
+let lastBytes = null, lastTime = null;
+async function refresh() {
+  try {
+    const m = await (await fetch("/api/metrics")).json();
+    document.getElementById("m-players").textContent = m.players;
+    document.getElementById("m-conns").textContent = m.connections;
+    const now = performance.now();
+    let bw = "–";
+    if (lastBytes !== null) {
+      const mbps = (m.sentBytes - lastBytes) / (1024 * 1024) / ((now - lastTime) / 1000);
+      bw = mbps.toFixed(2) + " MB/s";
+    }
+    lastBytes = m.sentBytes; lastTime = now;
+    document.getElementById("m-bw").textContent = bw;
+    const aoi = document.getElementById("m-aoi");
+    aoi.textContent = m.aoiEnabled ? "ON" : "OFF (broadcast all)";
+    aoi.className = "value " + (m.aoiEnabled ? "on" : "off");
+  } catch (e) { /* server down */ }
+}
+setInterval(refresh, 1000); refresh();
+
+// 表单 → POST JSON
+async function post(url, body, outId) {
+  const out = document.getElementById(outId);
+  try {
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    out.textContent = r.ok ? JSON.stringify(await r.json(), null, 2) : (r.status + " " + await r.text());
+  } catch (e) { out.textContent = "error: " + e; }
+}
+function num(form, name) { return Number(form.elements[name].value); }
+
+document.getElementById("spawn-form").onsubmit = e => {
+  e.preventDefault();
+  post("/api/spawn", { count: num(e.target, "count"), x: num(e.target, "x"), y: num(e.target, "y") }, "spawn-out");
+};
+document.getElementById("move-form").onsubmit = e => {
+  e.preventDefault();
+  post("/api/move", { id: num(e.target, "id"), x: num(e.target, "x"), y: num(e.target, "y") }, "move-out");
+};
+document.getElementById("loadtest-form").onsubmit = e => {
+  e.preventDefault();
+  post("/api/loadtest", { count: num(e.target, "count") }, "loadtest-out");
+};
+</script>
+</body>
+</html>

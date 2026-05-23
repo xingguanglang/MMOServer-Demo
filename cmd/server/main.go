@@ -26,15 +26,24 @@ func main() {
 
 	srv := gateway.NewServer(*aoi)
 
-	// HTTP 控制 API:用真实客户端连本机游戏服务器来生成玩家,并查询全场位置。
-	apiSrv := api.NewServer(dialable(*addr), func() []api.PlayerPos {
-		snap := srv.Snapshot()
-		out := make([]api.PlayerPos, 0, len(snap))
-		for _, p := range snap {
-			out = append(out, api.PlayerPos{ID: p.ID, X: p.X, Y: p.Y})
-		}
-		return out
-	})
+	// HTTP 控制 API + 管理台:用真实客户端连本机游戏服务器来生成玩家、查询全场位置、暴露指标。
+	apiSrv := api.NewServer(dialable(*addr),
+		func() []api.PlayerPos {
+			snap := srv.Snapshot()
+			out := make([]api.PlayerPos, 0, len(snap))
+			for _, p := range snap {
+				out = append(out, api.PlayerPos{ID: p.ID, X: p.X, Y: p.Y})
+			}
+			return out
+		},
+		func() api.Metrics {
+			return api.Metrics{
+				Players:     len(srv.Snapshot()),
+				Connections: srv.ConnCount(),
+				SentBytes:   srv.SentBytes(),
+				AOIEnabled:  srv.AOIEnabled(),
+			}
+		})
 	go func() {
 		log.Printf("HTTP API listening on %s", *httpAddr)
 		if err := http.ListenAndServe(*httpAddr, apiSrv.Handler()); err != nil {

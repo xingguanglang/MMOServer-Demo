@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/xingguanglang/MMOServer-Demo/internal/aoi"
 	"github.com/xingguanglang/MMOServer-Demo/internal/config"
@@ -35,9 +36,12 @@ type Server struct {
 	// 连接表 + 观战者表。被 accept goroutine、看门狗 goroutine、逻辑/场景 goroutine 共享,用读写锁保护。
 	mu           sync.RWMutex
 	conns        map[uint64]*Conn
-	spectators   map[uint64]*Conn     // 上帝视角观战的连接(收全量状态,不是玩家)
+	spectators   map[uint64]*Conn    // 上帝视角观战的连接(收全量状态,不是玩家)
 	nextID       uint64
-	lastSnapshot []scene.PlayerState  // 最近一次全量状态快照,供 HTTP API 查询
+	lastSnapshot []scene.PlayerState // 最近一次全量状态快照,供 HTTP API 查询
+
+	aoiEnabled bool          // 当前是否开启 AOI(供管理台显示模式)
+	sentBytes  atomic.Uint64 // 累计发出的字节数(供管理台算带宽)
 }
 
 // NewServer 创建服务器,并把场景挂上(场景以本 Server 作为 Notifier)。
@@ -47,6 +51,7 @@ func NewServer(aoiEnabled bool) *Server {
 		inbound:    make(chan Inbound, 1024),
 		conns:      make(map[uint64]*Conn),
 		spectators: make(map[uint64]*Conn),
+		aoiEnabled: aoiEnabled,
 	}
 	aoiMgr := aoi.NewManager(config.MapMinX, config.MapMinY, config.MapMaxX, config.MapMaxY, config.CellSize)
 	s.scene = scene.NewScene(aoiMgr, s, config.TickHz, config.AllHz, config.AOIHz, aoiEnabled)
@@ -105,6 +110,25 @@ func (s *Server) Snapshot() []scene.PlayerState {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.lastSnapshot
+}
+
+// ConnCount 返回当前连接数(玩家 + 观战者)。
+func (s *Server) ConnCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.conns)
+}
+
+// AOIEnabled 返回当前是否开启 AOI。
+func (s *Server) AOIEnabled() bool { return s.aoiEnabled }
+
+// SentBytes 返回累计发出的字节数(供算下行带宽)。
+func (s *Server) SentBytes() uint64 { return s.sentBytes.Load() }
+
+// sendPacket 发送一帧并累计字节数。
+func (s *Server) sendPacket(c *Conn, packet []byte) {
+	s.sentBytes.Add(uint64(len(packet)))
+	c.Send(packet)
 }
 
 // logicLoop 串行消费 inbound 通道,把消息解码后路由给场景。
@@ -200,7 +224,7 @@ func (s *Server) SyncAll(states []scene.PlayerState) {
 	if len(allTargets) > 0 {
 		if packet, err := encodeMessage(MsgMinimapSync, full); err == nil {
 			for _, c := range allTargets {
-				c.Send(packet)
+				s.sendPacket(c, packet)
 			}
 		}
 	}
@@ -208,7 +232,7 @@ func (s *Server) SyncAll(states []scene.PlayerState) {
 	if len(specTargets) > 0 {
 		if packet, err := encodeMessage(MsgStateSync, full); err == nil {
 			for _, c := range specTargets {
-				c.Send(packet)
+				s.sendPacket(c, packet)
 			}
 		}
 	}
@@ -238,7 +262,7 @@ func (s *Server) sendTo(c *Conn, msgType uint16, msg proto.Message) {
 		log.Printf("encode error: %v", err)
 		return
 	}
-	c.Send(packet)
+	s.sendPacket(c, packet)
 }
 
 // encodeMessage 把 protobuf 消息序列化,再套上我们的 [长度][类型][体] 协议帧。

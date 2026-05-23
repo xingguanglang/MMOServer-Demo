@@ -32,8 +32,9 @@ player only syncs with others nearby instead of the whole map.
   nearby players update fast via AOI (10 Hz, bright) while distant players come
   from a low-rate (5 Hz, dim) full-scene snapshot — full awareness, relevance-
   scaled freshness.
-- **HTTP control API**: a small JSON API to spawn players at a coordinate and
-  query everyone's positions — drive/observe the world without the binary protocol.
+- **Web admin console + HTTP API**: a browser dashboard (served by the Go server)
+  to spawn/move players and run load tests, with live players/connections/bandwidth/
+  AOI-mode metrics — drive and observe the world without the binary protocol.
 - **Tested**: unit tests for the codec and AOI, plus end-to-end gateway, client,
   and HTTP-API integration tests over real connections.
 
@@ -152,17 +153,21 @@ go run ./cmd/client -name alice    # players connect to the gateway as usual
 See [docs/design-distributed.md](docs/design-distributed.md) for the wire
 contract and rationale.
 
-## HTTP control API
+## Admin console & HTTP API
 
-The server also exposes a small HTTP/JSON API (default `:8080`) so external tools
-can drive and observe the world without speaking the binary protocol:
+The server hosts a small **web admin console** at `http://localhost:8080/` plus a
+JSON API (default `:8080`), so you can drive and observe the world from a browser
+or external tools without speaking the binary protocol. The console has tabs to
+spawn / move players and start a load test, and live cards for players,
+connections, downstream bandwidth, and AOI mode.
 
-| Method & path      | Body                              | Description                                          |
-| ------------------ | --------------------------------- | ---------------------------------------------------- |
-| `POST /api/spawn`  | `{"count":50,"x":128,"y":128}`    | Spawn `count` players at (x, y); returns their `ids` |
-| `POST /api/move`   | `{"id":3,"x":50,"y":60}`          | Push an API-spawned player to exact (x, y)           |
-| `GET /api/players` | —                                 | All players' positions as JSON                       |
-| `GET /api/stats`   | —                                 | `{"players": N}`                                     |
+| Method & path       | Body                              | Description                                          |
+| ------------------- | --------------------------------- | ---------------------------------------------------- |
+| `GET /api/metrics`  | —                                 | `{players, connections, sentBytes, aoiEnabled}`      |
+| `POST /api/spawn`   | `{"count":50,"x":128,"y":128}`    | Spawn `count` players at (x, y); returns their `ids` |
+| `POST /api/move`    | `{"id":3,"x":50,"y":60}`          | Push an API-spawned player to exact (x, y)           |
+| `POST /api/loadtest`| `{"count":200}`                   | Inject `count` random-walking bots (load)            |
+| `GET /api/players`  | —                                 | All players' positions as JSON                       |
 
 Spawned players are real TCP clients, so they also appear on every client's map.
 
