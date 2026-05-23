@@ -88,7 +88,7 @@ func (s *Scene) Run() {
 func (s *Scene) tick() {
 	s.drainInputs()
 	s.tickCount++
-	if s.tickCount%s.aoiEvery == 0 && s.tickCount%s.allEvery != 0 { // AOI 同步和全量同步错开,避免同一 tick 里又发了 AOI 又发了全量
+	if s.tickCount%s.aoiEvery == 0 { // AOI 同步和全量同步错开,避免同一 tick 里又发了 AOI 又发了全量
 		s.broadcastAOI()
 	}
 	if s.tickCount%s.allEvery == 0 {
