@@ -28,8 +28,10 @@ player only syncs with others nearby instead of the whole map.
 - **10 Hz state sync + client interpolation**: the server broadcasts AOI-filtered
   position snapshots at 10 Hz, decoupled from the 30 Hz logic tick; the ebiten
   client interpolates them to smooth 60 fps movement.
-- **Tested**: unit tests for the codec and AOI, plus end-to-end gateway and
-  client integration tests over real TCP connections.
+- **HTTP control API**: a small JSON API to spawn players at a coordinate and
+  query everyone's positions — drive/observe the world without the binary protocol.
+- **Tested**: unit tests for the codec and AOI, plus end-to-end gateway, client,
+  and HTTP-API integration tests over real connections.
 
 ## Architecture
 
@@ -91,6 +93,7 @@ internal/gateway/   connection mgmt, routing, Notifier impl (+ integration tests
 internal/aoi/       nine-grid AOI manager (+ tests)
 internal/scene/     tick loop + scene orchestration (+ tests)
 internal/client/    reusable network-layer client + world model (+ tests)
+internal/api/       HTTP/JSON control API (spawn, query) (+ tests)
 pkg/pb/             generated protobuf code
 proto/              protobuf source (game.proto)
 ```
@@ -128,6 +131,24 @@ go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
 
 # regenerate pkg/pb/game.pb.go from proto/game.proto
 protoc --go_out=. --go_opt=module=github.com/xingguanglang/MMOServer-Demo proto/game.proto
+```
+
+## HTTP control API
+
+The server also exposes a small HTTP/JSON API (default `:8080`) so external tools
+can drive and observe the world without speaking the binary protocol:
+
+| Method & path      | Body                              | Description                       |
+| ------------------ | --------------------------------- | --------------------------------- |
+| `POST /api/spawn`  | `{"count":50,"x":128,"y":128}`    | Spawn `count` players near (x, y) |
+| `GET /api/players` | —                                 | All players' positions as JSON    |
+| `GET /api/stats`   | —                                 | `{"players": N}`                  |
+
+Spawned players are real TCP clients, so they also appear in the spectator view.
+
+```bash
+curl -X POST localhost:8080/api/spawn -d '{"count":50,"x":128,"y":128}'
+curl localhost:8080/api/players
 ```
 
 ## Performance

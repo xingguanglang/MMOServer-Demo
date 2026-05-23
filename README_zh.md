@@ -23,7 +23,8 @@
   取代 O(n²) 的"广播给所有人"。
 - **10Hz 状态同步 + 客户端插值**:服务器按 10Hz 广播经 AOI 过滤的位置快照,
   与 30Hz 逻辑 tick 解耦;ebiten 客户端把快照插值成 60fps 的平滑移动。
-- **有测试**:协议编解码与 AOI 的单元测试,以及基于真实 TCP 连接的网关、客户端端到端集成测试。
+- **HTTP 控制 API**:一个小的 JSON API,可在指定坐标生成玩家、查询全场位置——不用走二进制协议就能驱动/观察世界。
+- **有测试**:协议编解码与 AOI 的单元测试,以及基于真实连接的网关、客户端、HTTP API 端到端集成测试。
 
 ## 架构
 
@@ -82,6 +83,7 @@ internal/gateway/   连接管理、路由、Notifier 实现(含集成测试)
 internal/aoi/       九宫格 AOI 管理器(含测试)
 internal/scene/     tick 主循环 + 场景编排(含测试)
 internal/client/    可复用的客户端网络层 + 世界模型(含测试)
+internal/api/       HTTP/JSON 控制 API(生成、查询)(含测试)
 pkg/pb/             protobuf 生成代码
 proto/              protobuf 源文件(game.proto)
 ```
@@ -117,6 +119,23 @@ go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
 
 # 从 proto/game.proto 重新生成 pkg/pb/game.pb.go
 protoc --go_out=. --go_opt=module=github.com/xingguanglang/MMOServer-Demo proto/game.proto
+```
+
+## HTTP 控制 API
+
+服务器还开放一个小的 HTTP/JSON API(默认 `:8080`),让外部工具不走二进制协议就能驱动和观察世界:
+
+| 方法与路径          | 请求体                            | 说明                          |
+| ------------------ | --------------------------------- | ----------------------------- |
+| `POST /api/spawn`  | `{"count":50,"x":128,"y":128}`    | 在 (x, y) 附近生成 count 个玩家 |
+| `GET /api/players` | —                                 | 全场所有玩家位置(JSON)        |
+| `GET /api/stats`   | —                                 | `{"players": N}`              |
+
+生成的玩家是真实 TCP 客户端,所以也会出现在观战窗口里。
+
+```bash
+curl -X POST localhost:8080/api/spawn -d '{"count":50,"x":128,"y":128}'
+curl localhost:8080/api/players
 ```
 
 ## 性能

@@ -37,10 +37,11 @@ type Server struct {
 	scene   *scene.Scene   // 游戏场景(持有 tick 主循环 + AOI)
 
 	// 连接表 + 观战者表。被 accept goroutine、看门狗 goroutine、逻辑/场景 goroutine 共享,用读写锁保护。
-	mu         sync.RWMutex
-	conns      map[uint64]*Conn
-	spectators map[uint64]*Conn // 上帝视角观战的连接(收全量状态,不是玩家)
-	nextID     uint64
+	mu           sync.RWMutex
+	conns        map[uint64]*Conn
+	spectators   map[uint64]*Conn     // 上帝视角观战的连接(收全量状态,不是玩家)
+	nextID       uint64
+	lastSnapshot []scene.PlayerState  // 最近一次全量状态快照,供 HTTP API 查询
 }
 
 // NewServer 创建服务器,并把场景挂上(场景以本 Server 作为 Notifier)。
@@ -101,6 +102,13 @@ func (s *Server) connByPlayer(playerID int64) *Conn {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.conns[uint64(playerID)]
+}
+
+// Snapshot 返回最近一次全量玩家状态快照(供 HTTP API 查询全场玩家位置)。
+func (s *Server) Snapshot() []scene.PlayerState {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.lastSnapshot
 }
 
 // logicLoop 串行消费 inbound 通道,把消息解码后路由给场景。
@@ -171,18 +179,23 @@ func (s *Server) SyncState(observerID int64, states []scene.PlayerState) {
 	s.sendToPlayer(observerID, MsgStateSync, &pb.StateSync{Players: players})
 }
 
-// SyncAll 把全场所有玩家的快照编码成 StateSync,发给所有观战者(上帝视角)。
+// SyncAll 缓存最新全量快照(供 HTTP API 查询),并发给所有观战者(上帝视角)。
 func (s *Server) SyncAll(states []scene.PlayerState) {
-	s.mu.RLock()
-	if len(s.spectators) == 0 {
-		s.mu.RUnlock()
-		return // 没人观战,不用编码,直接返回
+	s.mu.Lock()
+	s.lastSnapshot = states // scene 每 tick 传入新切片、之后不再改动,存引用安全
+	hasSpectators := len(s.spectators) > 0
+	var targets []*Conn
+	if hasSpectators {
+		targets = make([]*Conn, 0, len(s.spectators))
+		for _, c := range s.spectators {
+			targets = append(targets, c)
+		}
 	}
-	targets := make([]*Conn, 0, len(s.spectators))
-	for _, c := range s.spectators {
-		targets = append(targets, c)
+	s.mu.Unlock()
+
+	if !hasSpectators {
+		return
 	}
-	s.mu.RUnlock()
 
 	players := make([]*pb.PlayerState, 0, len(states))
 	for _, st := range states {
