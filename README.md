@@ -133,6 +133,21 @@ go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
 protoc --go_out=. --go_opt=module=github.com/xingguanglang/MMOServer-Demo proto/game.proto
 ```
 
+## Distributed mode (gateway + scene)
+
+Besides the all-in-one `cmd/server`, the server can run split into a **gateway**
+process and a **scene** process talking over a gRPC bidirectional stream — the
+gateway owns TCP connections, the scene owns the tick loop + AOI:
+
+```bash
+go run ./cmd/scene                 # scene gRPC server on :9100 (start first)
+go run ./cmd/gateway               # gateway on :9000, connects to the scene
+go run ./cmd/client -name alice    # players connect to the gateway as usual
+```
+
+See [docs/design-distributed.md](docs/design-distributed.md) for the wire
+contract and rationale.
+
 ## HTTP control API
 
 The server also exposes a small HTTP/JSON API (default `:8080`) so external tools
@@ -190,6 +205,8 @@ go run ./cmd/loadtest -n 200 -duration 15s
   enter/leave algorithm, alternatives, and pitfalls.
 - [State sync](docs/design-sync.md) — state sync vs. frame sync, the 10 Hz / 30 Hz
   split, client-side interpolation, and how AOI bounds bandwidth.
+- [Distributed split](docs/design-distributed.md) — gateway/scene processes over a
+  gRPC bidirectional stream, the wire contract, and concurrency notes.
 
 ## Roadmap
 
@@ -197,6 +214,6 @@ go run ./cmd/loadtest -n 200 -duration 15s
 - [x] **Phase 2** — scene tick loop, nine-grid AOI, enter/leave view events, end-to-end sync
 - [x] **Phase 3** — 10 Hz state-sync broadcast + ebiten visualization client
 - [x] **Phase 4** — load-testing bots (1–2k virtual players) + performance data + AOI comparison
-- [ ] **Phase 5** — distributed split (gateway / scene / battle), gRPC, Redis + MySQL
+- [~] **Phase 5** — distributed split: gateway + scene over gRPC ✓ (5a); Redis/MySQL + battle service pending
 - [x] **Phase 6** — Docker Compose, GitHub Actions CI, bilingual README + design docs
       (done ahead of phase 5; Redis/MySQL persistence lands with the distributed split)

@@ -121,6 +121,19 @@ go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
 protoc --go_out=. --go_opt=module=github.com/xingguanglang/MMOServer-Demo proto/game.proto
 ```
 
+## 分布式模式(网关 + 场景)
+
+除了一体化的 `cmd/server`,服务器还能拆成**网关**进程和**场景**进程,二者用 gRPC
+双向流通信——网关管 TCP 连接,场景管 tick 主循环 + AOI:
+
+```bash
+go run ./cmd/scene                 # 场景 gRPC 服务,:9100(先起)
+go run ./cmd/gateway               # 网关 :9000,连接场景
+go run ./cmd/client -name alice    # 玩家照常连网关
+```
+
+线路契约与设计理由见 [docs/design-distributed.md](docs/design-distributed.md)。
+
 ## HTTP 控制 API
 
 服务器还开放一个小的 HTTP/JSON API(默认 `:8080`),让外部工具不走二进制协议就能驱动和观察世界:
@@ -175,6 +188,8 @@ go run ./cmd/loadtest -n 200 -duration 15s
   替代方案与踩坑记录。
 - [状态同步](docs/design-sync.md) — 状态同步 vs 帧同步、10Hz / 30Hz 拆分、
   客户端插值,以及 AOI 如何限制带宽。
+- [分布式拆分](docs/design-distributed.md) — 网关/场景进程经 gRPC 双向流通信、
+  线路契约与并发要点。
 
 ## 路线图
 
@@ -182,6 +197,6 @@ go run ./cmd/loadtest -n 200 -duration 15s
 - [x] **阶段 2** — 场景 tick 主循环、九宫格 AOI、进/出视野事件、端到端同步
 - [x] **阶段 3** — 10 Hz 状态同步广播 + ebiten 可视化客户端
 - [x] **阶段 4** — 压测机器人(1–2k 虚拟玩家)+ 性能数据 + AOI 对比
-- [ ] **阶段 5** — 分布式拆分(网关 / 场景 / 战斗)、gRPC、Redis + MySQL
+- [~] **阶段 5** — 分布式拆分:网关 + 场景经 gRPC 拆开 ✓(5a);Redis/MySQL + 战斗服待做
 - [x] **阶段 6** — Docker Compose、GitHub Actions CI、中英 README + 设计文档
       (先于阶段 5 完成;Redis/MySQL 持久化随分布式拆分一起做)
