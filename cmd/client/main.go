@@ -143,6 +143,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	if g.spectate {
 		ebitenutil.DebugPrint(screen, fmt.Sprintf("SPECTATOR (god view)  players=%d", len(g.rendered)))
+		ebitenutil.DebugPrintAt(screen, "each dot = a player (no AOI filtering)", 6, screenSize-22)
 		return
 	}
 	// 自己:绿色。
@@ -150,6 +151,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	ebitenutil.DebugPrint(screen, fmt.Sprintf(
 		"id=%d  pos=(%.0f,%.0f)  near(AOI)=%d  far(global)=%d\nWASD / arrows to move",
 		g.c.PlayerID(), g.selfX, g.selfY, near, len(g.rendered)-near))
+	// 左下角图例(ASCII:ebiten 调试字体不支持中文)。
+	ebitenutil.DebugPrintAt(screen, "green=you   white=nearby (AOI, fast)   gray=far (global, slow)", 6, screenSize-22)
 }
 
 func (g *Game) Layout(int, int) (int, int) { return screenSize, screenSize }
