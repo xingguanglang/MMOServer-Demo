@@ -266,10 +266,22 @@ go run ./cmd/loadtest -n 200 -duration 15s
 
 ## Roadmap
 
+Done:
+
 - [x] **Phase 1** — project skeleton, binary protocol, gateway send/recv, minimal login
 - [x] **Phase 2** — scene tick loop, nine-grid AOI, enter/leave view events, end-to-end sync
-- [x] **Phase 3** — 10 Hz state-sync broadcast + ebiten visualization client
-- [x] **Phase 4** — load-testing bots (1–2k virtual players) + performance data + AOI comparison
-- [~] **Phase 5** — distributed split: gateway + scene over gRPC ✓ (5a); Redis/MySQL + battle service pending
+- [x] **Phase 3** — 10 Hz state-sync broadcast + ebiten client (client-side interpolation)
+- [x] **Phase 4** — load-testing bots (1–2k virtual players) + performance data + AOI on/off comparison
+- [x] **Phase 5a** — distributed split: gateway + scene processes over a gRPC bidirectional stream
 - [x] **Phase 6** — Docker Compose, GitHub Actions CI, bilingual README + design docs
-      (done ahead of phase 5; Redis/MySQL persistence lands with the distributed split)
+
+Also shipped (beyond the original plan):
+
+- [x] Distance-based update rate / LOD — AOI fast for nearby + low-rate global feed for the rest
+- [x] Web admin console + HTTP API — spawn / move / load test / clear / launch windows / live rates / AOI toggle / metrics
+- [x] Spectator (god-view) client
+
+Optional next steps:
+
+- [ ] **Phase 5b** — Redis (hot) + MySQL (persistence) data layer; periodic + on-logout save
+- [ ] **Phase 5c** — lightweight battle service (gRPC cross-service demo)
