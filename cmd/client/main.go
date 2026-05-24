@@ -27,6 +27,7 @@ const (
 	tps        = 60.0            // ebiten 默认每秒 60 帧
 	moveSpeed  = 90.0            // 移动速度(世界单位/秒)
 	lerpAlpha  = 0.2             // 插值系数:每帧朝目标靠近的比例
+	teleportDist = cellSize * 3  // 目标与当前渲染位置超过此距离视为瞬移/出生 → 直接吸附,不插值
 )
 
 // renderPlayer 是某个远程玩家的渲染状态:rx,ry 是当前画在屏幕上的位置,
