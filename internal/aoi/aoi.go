@@ -26,8 +26,10 @@ type Manager struct {
 }
 
 func NewManager(minX, minY, maxX, maxY, cellSize int) *Manager {
-	cntX := (maxX - minX) / cellSize
-	cntY := (maxY - minY) / cellSize
+	// 向上取整:即使地图边长不能被格子大小整除,格子也能完整覆盖整张地图
+	// (最后一格略微超出 maxX/maxY)。配合 gridID 里的 clamp,任意尺寸都安全。
+	cntX := (maxX - minX + cellSize - 1) / cellSize
+	cntY := (maxY - minY + cellSize - 1) / cellSize
 	m := &Manager{
 		minX:     minX,
 		minY:     minY,

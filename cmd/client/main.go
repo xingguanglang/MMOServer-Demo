@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"log"
 	"math/rand"
+	"sync/atomic"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -38,15 +39,19 @@ type renderPlayer struct {
 
 // Game 是 ebiten 的游戏对象:持有网络客户端 + 本地渲染状态。
 type Game struct {
-	c        *client.Client
-	rendered map[int64]*renderPlayer
-	selfX    float32
-	selfY    float32
-	spectate bool // 观战模式:画全部玩家,不画自己、不响应键盘
+	c            *client.Client
+	rendered     map[int64]*renderPlayer
+	selfX        float32
+	selfY        float32
+	spectate     bool        // 观战模式:画全部玩家,不画自己、不响应键盘
+	disconnected atomic.Bool // 连接断开(如被服务器一键清空)→ 关闭窗口
 }
 
 // Update 每帧(60fps)调用:处理键盘输入、上报移动、把远程玩家朝目标插值。
 func (g *Game) Update() error {
+	if g.disconnected.Load() {
+		return ebiten.Termination // 服务器断开了连接 → 优雅退出、关闭窗口
+	}
 	if !g.spectate {
 		g.updateSelf()
 	}
@@ -209,6 +214,7 @@ func main() {
 		if err := c.Run(); err != nil {
 			log.Printf("disconnected: %v", err)
 		}
+		g.disconnected.Store(true) // 连接结束 → 让 Update 关闭窗口
 	}()
 
 	title := "MMOServer-Demo - " + *name

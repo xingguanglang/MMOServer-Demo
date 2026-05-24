@@ -123,12 +123,16 @@ func (s *Server) AOIEnabled() bool { return s.scene.AOIEnabled() }
 // SetAOIEnabled 运行时切换 AOI。
 func (s *Server) SetAOIEnabled(enabled bool) { s.scene.SetAOIEnabled(enabled) }
 
-// DisconnectAll 关闭所有连接(玩家 + 观战者),返回关闭数量。
+// DisconnectPlayers 断开所有"玩家"连接(含 API/压测机器人),但保留观战者,
+// 返回断开数量。这样清空后观战窗口仍在,并会通过下一次全场快照看到世界已空。
 // 每条连接关闭后,其看门狗会触发 scene.Leave,把玩家从世界移除。
-func (s *Server) DisconnectAll() int {
+func (s *Server) DisconnectPlayers() int {
 	s.mu.RLock()
 	conns := make([]*Conn, 0, len(s.conns))
-	for _, c := range s.conns {
+	for id, c := range s.conns {
+		if _, isSpectator := s.spectators[id]; isSpectator {
+			continue // 保留观战者
+		}
 		conns = append(conns, c)
 	}
 	s.mu.RUnlock()
