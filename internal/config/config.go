@@ -3,11 +3,11 @@
 // without hunting through the code.
 package config
 
-// 模拟 / 世界参数
+// 模拟 / 世界参数(帧率是默认值 = "default" 预设;启动可用 -rates 选预设,运行时可在管理台改)
 const (
-	TickHz = 64 // 逻辑帧率(每秒 tick 数)
-	AOIHz  = 64 // 给玩家的 AOI 状态同步频率(每秒,看清附近)
-	AllHz  = 16 // 全场快照频率(每秒):给玩家画小地图、给观战者看全局
+	TickHz = 30 // 逻辑帧率(每秒 tick 数)
+	AOIHz  = 10 // 给玩家的 AOI 状态同步频率(每秒,看清附近)
+	AllHz  = 5  // 全场快照频率(每秒):给玩家画小地图、给观战者看全局
 
 	MapMinX  = 0   // 地图左边界
 	MapMinY  = 0   // 地图下边界
@@ -15,6 +15,15 @@ const (
 	MapMaxY  = 256 // 地图上边界
 	CellSize = 32  // AOI 格子边长(约等于视野半径)
 )
+
+// RatePreset 是一组帧率(tick / AOI 同步 / 全场同步,单位 Hz)。
+type RatePreset struct{ TickHz, AOIHz, AllHz int }
+
+// RatePresets 是可选的帧率预设:用 cmd/server 的 -rates 选,或运行时在管理台改。
+var RatePresets = map[string]RatePreset{
+	"default": {TickHz, AOIHz, AllHz}, // 30/10/5,与 README 性能数据一致
+	"high":    {64, 64, 16},           // 高帧率:AOI 每 tick,更顺但更费带宽
+}
 
 // 新玩家出生点
 const (

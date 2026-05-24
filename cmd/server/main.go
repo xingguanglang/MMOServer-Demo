@@ -20,6 +20,7 @@ func main() {
 	addr := flag.String("addr", config.GameAddr, "game server (TCP) listen address")
 	httpAddr := flag.String("http", config.HTTPAddr, "HTTP control API listen address")
 	aoi := flag.Bool("aoi", true, "enable AOI; set -aoi=false to broadcast to everyone (perf comparison)")
+	rates := flag.String("rates", "default", "rate preset: default (30/10/5) or high (64/64/16)")
 	flag.Parse()
 
 	ln, err := net.Listen("tcp", *addr)
@@ -29,6 +30,12 @@ func main() {
 	log.Printf("game server listening on %s (aoi=%v)", *addr, *aoi)
 
 	srv := gateway.NewServer(*aoi)
+	if p, ok := config.RatePresets[*rates]; ok {
+		srv.SetRates(p.TickHz, p.AOIHz, p.AllHz)
+		log.Printf("rate preset %q: tick=%dHz aoi=%dHz all=%dHz", *rates, p.TickHz, p.AOIHz, p.AllHz)
+	} else {
+		log.Printf("unknown rate preset %q, using config defaults", *rates)
+	}
 
 	// HTTP 控制 API + 管理台:用真实客户端连本机游戏服务器来生成玩家、查询全场位置、暴露指标。
 	apiSrv := api.NewServer(dialable(*addr),
