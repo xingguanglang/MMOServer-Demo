@@ -134,19 +134,17 @@ func (c *Client) handle(msgType uint16, body []byte) {
 	case msgStateSync:
 		var m pb.StateSync
 		if proto.Unmarshal(body, &m) == nil {
-			c.mu.Lock()
-			if c.spectator {
-				// 观战:StateSync 是全场全量,整体替换,这样离场的玩家会被自动移除。
-				c.players = make(map[int64]*RemotePlayer, len(m.GetPlayers()))
-			}
+			// StateSync 是「当前视野的全量快照」(普通模式=附近全部,观战=全场全部)。
+			// 用它整体重建玩家表,作为权威对账:不在最新快照里的人自动剔除。
+			// 这样即使对应的 PlayerLeave 在过载丢帧时丢失,也不会留下永远停在旧位置的
+			// 「白色鬼影」——下一次状态同步就把它清掉。Enter/Leave 退化为两次同步之间的
+			// 即时提示,丢了也能自愈。
+			next := make(map[int64]*RemotePlayer, len(m.GetPlayers()))
 			for _, st := range m.GetPlayers() {
-				p := c.players[st.GetPlayerId()]
-				if p == nil { // 容错:即便漏了 Enter,也按状态同步补上
-					p = &RemotePlayer{ID: st.GetPlayerId()}
-					c.players[st.GetPlayerId()] = p
-				}
-				p.X, p.Y = st.GetX(), st.GetY()
+				next[st.GetPlayerId()] = &RemotePlayer{ID: st.GetPlayerId(), X: st.GetX(), Y: st.GetY()}
 			}
+			c.mu.Lock()
+			c.players = next
 			c.mu.Unlock()
 		}
 	case msgMinimapSync:

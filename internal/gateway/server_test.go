@@ -184,9 +184,10 @@ func TestPlayerLeaveOnDisconnect(t *testing.T) {
 	}
 }
 
-// TestSoloPlayerNoAOIBroadcast:场上只有自己时移动,不该收到 AOI 状态同步
-//(视野里没别人)。低频的小地图 MinimapSync 是允许的(里面只有自己)。
-func TestSoloPlayerNoAOIBroadcast(t *testing.T) {
+// TestSoloPlayerGetsEmptyAOISync:场上只有自己时移动,仍会收到一条「空」AOI 状态同步。
+// 这是刻意为之的权威对账:即使对应的 PlayerLeave 在过载丢帧时丢失,客户端也能靠这条
+// 空快照把视野清空、剔除「鬼影」。
+func TestSoloPlayerGetsEmptyAOISync(t *testing.T) {
 	addr, cleanup := startTestServer(t)
 	defer cleanup()
 
@@ -195,15 +196,13 @@ func TestSoloPlayerNoAOIBroadcast(t *testing.T) {
 
 	sendMove(t, connA, 1, 1)
 
-	// 读到超时为止;期间只要出现 AOI StateSync 就算失败,MinimapSync 等忽略。
-	connA.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-	for {
-		msgType, _, err := protocol.ReadFrame(connA)
-		if err != nil {
-			return // 超时,没有更多消息 → 通过
-		}
-		if msgType == MsgStateSync {
-			t.Fatal("场上只有自己,不该收到 AOI 状态同步")
-		}
+	// 应收到一条 AOI StateSync,且其中不含任何其他玩家(空快照)。
+	body := readUntil(t, connA, MsgStateSync, 2*time.Second)
+	var ss pb.StateSync
+	if err := proto.Unmarshal(body, &ss); err != nil {
+		t.Fatalf("unmarshal StateSync failed: %v", err)
+	}
+	if len(ss.GetPlayers()) != 0 {
+		t.Errorf("场上只有自己,AOI 状态同步应为空,实际含 %d 人", len(ss.GetPlayers()))
 	}
 }

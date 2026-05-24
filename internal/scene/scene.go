@@ -177,9 +177,9 @@ func (s *Scene) broadcastAOI() {
 				}
 			}
 		}
-		if len(states) > 0 {
-			s.notifier.SyncState(id, states)
-		}
+		// 即使视野为空也发一条空快照:作为权威对账,让客户端把离开视野的人剔除——
+		// 即便对应的 PlayerLeave 在过载丢帧时丢失,下一次同步也能自愈(消除「鬼影」)。
+		s.notifier.SyncState(id, states)
 	}
 }
 

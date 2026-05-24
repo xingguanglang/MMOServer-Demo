@@ -178,9 +178,14 @@ func TestStateSyncContainsViewers(t *testing.T) {
 		t.Error("快照不应含玩家自己")
 	}
 
-	// 玩家 3 视野内没别人,不该收到状态同步。
-	if _, ok := syncFor(fake.syncs, 3); ok {
-		t.Error("玩家 3 视野内无人,不该收到状态同步")
+	// 玩家 3 视野内没别人,但仍会收到一条「空」状态同步——这是权威对账:
+	// 让客户端即使在 PlayerLeave 丢失时也能把视野清空(剔除鬼影)。
+	sync3, ok := syncFor(fake.syncs, 3)
+	if !ok {
+		t.Fatal("玩家 3 应收到状态同步(空视野也发,用于权威对账)")
+	}
+	if len(sync3.states) != 0 {
+		t.Errorf("玩家 3 视野内无人,其状态同步应为空,实际含 %d 人", len(sync3.states))
 	}
 }
 
