@@ -9,9 +9,21 @@ core systems behind a real-time multiplayer world: a custom binary protocol over
 TCP, a fixed-rate tick loop, and **nine-grid Area-of-Interest (AOI)** so each
 player only syncs with others nearby instead of the whole map.
 
-> Status: phases 1–3 complete (protocol, gateway, AOI, tick loop, end-to-end
-> enter/leave, 10 Hz state sync, and an ebiten visualization client). Load
-> testing and the distributed split are on the roadmap below.
+> Status: core feature-complete — protocol, gateway, nine-grid AOI, tick loop,
+> 10 Hz state sync, ebiten client + spectator, load testing with measured data,
+> a gRPC gateway/scene split, a web admin console, CI, and Docker.
+
+## Demo
+
+A client's view — your avatar is green; nearby players (white) update fast via
+AOI, while distant ones (gray) come from the low-rate global feed:
+
+![client view](docs/clientView.gif)
+
+200 load-test bots — each client syncs at high rate only with the handful nearby
+(white) yet still sees everyone on the map (gray) at a low rate:
+
+![load test, 200 bots](docs/loadTest200.gif)
 
 ## Highlights
 
@@ -161,22 +173,54 @@ or external tools without speaking the binary protocol. The console has tabs to
 spawn / move players and start a load test, and live cards for players,
 connections, downstream bandwidth, and AOI mode.
 
-| Method & path       | Body                              | Description                                          |
-| ------------------- | --------------------------------- | ---------------------------------------------------- |
-| `GET /api/metrics`  | —                                 | `{players, connections, sentBytes, aoiEnabled}`      |
-| `POST /api/spawn`   | `{"count":50,"x":128,"y":128}`    | Spawn `count` players at (x, y); returns their `ids` |
-| `POST /api/move`    | `{"id":3,"x":50,"y":60}`          | Push an API-spawned player to exact (x, y)           |
-| `POST /api/loadtest`| `{"count":200}`                   | Inject `count` random-walking bots (load)            |
-| `GET /api/players`  | —                                 | All players' positions as JSON                       |
+| Method & path        | Body                                | Description                                          |
+| -------------------- | ----------------------------------- | ---------------------------------------------------- |
+| `GET /api/metrics`   | —                                   | `{players, connections, sentBytes, aoiEnabled, tickHz, aoiHz, allHz}` |
+| `GET /api/players`   | —                                   | All players' positions as JSON                       |
+| `POST /api/spawn`    | `{"count":50,"x":128,"y":128}`      | Spawn `count` players at (x, y); returns their `ids` |
+| `POST /api/move`     | `{"id":3,"x":50,"y":60}`            | Push an API-spawned player to exact (x, y)           |
+| `POST /api/loadtest` | `{"count":200}`                     | Inject `count` random-walking bots (load)            |
+| `POST /api/rates`    | `{"tickHz":30,"aoiHz":10,"allHz":5}`| Change tick / AOI-sync / full-sync rates live        |
+| `POST /api/aoi`      | `{"enabled":false}`                 | Toggle AOI (off = broadcast to all → bandwidth jumps)|
+| `POST /api/clear`    | —                                   | Disconnect all players (spectators stay)             |
+| `POST /api/launch`   | `{"spectate":true}`                 | Open a client/spectator window on the host (local)   |
 
 Spawned players are real TCP clients, so they also appear on every client's map.
 
+### Walkthrough
+
+Easiest: open the console at `http://localhost:8080/` and click around. Or drive
+it over HTTP:
+
 ```bash
-# spawn one and capture its id, then push a coordinate to it
-curl -s -X POST localhost:8080/api/spawn -d '{"count":1,"x":128,"y":128}'   # -> {"spawned":1,"ids":[3]}
-curl -X POST localhost:8080/api/move -d '{"id":3,"x":50,"y":60}'
-curl localhost:8080/api/players
+# 1) spawn a player at an exact coordinate; the response gives its id
+curl -s -X POST localhost:8080/api/spawn -d '{"count":1,"x":128,"y":128}'
+#    -> {"spawned":1,"ids":[3]}
+
+# 2) push a new coordinate to that player
+curl -s -X POST localhost:8080/api/move -d '{"id":3,"x":50,"y":60}'
+
+# 3) read the world / live metrics
+curl -s localhost:8080/api/players
+curl -s localhost:8080/api/metrics
+
+# 4) generate load, then watch metrics
+curl -s -X POST localhost:8080/api/loadtest -d '{"count":200}'
+
+# 5) flip AOI off (broadcast-to-all) and watch bandwidth jump; change rates live
+curl -s -X POST localhost:8080/api/aoi   -d '{"enabled":false}'
+curl -s -X POST localhost:8080/api/rates -d '{"tickHz":64,"aoiHz":64,"allHz":16}'
+
+# 6) clear the world
+curl -s -X POST localhost:8080/api/clear
 ```
+
+> On **Windows PowerShell**, `curl` is an alias for `Invoke-WebRequest` and won't
+> accept these flags. Use `curl.exe`, or `Invoke-RestMethod`:
+> ```powershell
+> Invoke-RestMethod -Uri http://localhost:8080/api/spawn -Method Post `
+>   -ContentType application/json -Body '{"count":1,"x":128,"y":128}'
+> ```
 
 ## Performance
 

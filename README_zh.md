@@ -8,8 +8,18 @@
 基于 TCP 的自定义二进制协议、固定频率的 tick 主循环,以及**九宫格 AOI(兴趣区域)**——
 让每个玩家只与附近的玩家同步,而不是整张地图的所有人。
 
-> 状态:阶段 1–3 已完成(协议、网关、AOI、tick 主循环、端到端进/出视野、
-> 10Hz 状态同步,以及 ebiten 可视化客户端)。压力测试和分布式拆分见下方路线图。
+> 状态:核心功能已完成——协议、网关、九宫格 AOI、tick 主循环、10Hz 状态同步、
+> ebiten 客户端 + 观战、带实测数据的压测、gRPC 网关/场景拆分、网页管理台、CI、Docker。
+
+## 演示
+
+客户端视角——自己是绿点;近处玩家(白)走 AOI 高频更新,远处玩家(灰)来自低频全局流:
+
+![客户端视角](docs/clientView.gif)
+
+200 个压测机器人——每个客户端只跟身边少数人(白)高频同步,同时仍能看到全场所有人(灰,低频):
+
+![压测 200](docs/loadTest200.gif)
 
 ## 亮点
 
@@ -141,22 +151,52 @@ go run ./cmd/client -name alice    # 玩家照常连网关
 浏览器或外部工具不走二进制协议就能驱动和观察世界。管理台有"生成/移动玩家、开压测"的标签页,
 以及玩家数、连接数、下行带宽、AOI 模式的实时卡片。
 
-| 方法与路径           | 请求体                            | 说明                                   |
-| ------------------- | --------------------------------- | -------------------------------------- |
-| `GET /api/metrics`  | —                                 | `{players, connections, sentBytes, aoiEnabled}` |
-| `POST /api/spawn`   | `{"count":50,"x":128,"y":128}`    | 在精确 (x, y) 生成 count 个玩家,返回其 `ids` |
-| `POST /api/move`    | `{"id":3,"x":50,"y":60}`          | 把 API 生成的某玩家直接推到精确 (x, y)     |
-| `POST /api/loadtest`| `{"count":200}`                   | 注入 count 个随机游走的机器人(压测)      |
-| `GET /api/players`  | —                                 | 全场所有玩家位置(JSON)                 |
+| 方法与路径            | 请求体                                | 说明                                   |
+| -------------------- | ------------------------------------- | -------------------------------------- |
+| `GET /api/metrics`   | —                                     | `{players, connections, sentBytes, aoiEnabled, tickHz, aoiHz, allHz}` |
+| `GET /api/players`   | —                                     | 全场所有玩家位置(JSON)                 |
+| `POST /api/spawn`    | `{"count":50,"x":128,"y":128}`        | 在精确 (x, y) 生成 count 个玩家,返回其 `ids` |
+| `POST /api/move`     | `{"id":3,"x":50,"y":60}`              | 把 API 生成的某玩家直接推到精确 (x, y)     |
+| `POST /api/loadtest` | `{"count":200}`                       | 注入 count 个随机游走的机器人(压测)      |
+| `POST /api/rates`    | `{"tickHz":30,"aoiHz":10,"allHz":5}`  | 运行时改 tick / AOI / 全场 同步频率       |
+| `POST /api/aoi`      | `{"enabled":false}`                   | 切 AOI(关 = 全场广播 → 带宽飙升)        |
+| `POST /api/clear`    | —                                     | 断开所有玩家(保留观战者)               |
+| `POST /api/launch`   | `{"spectate":true}`                   | 在本机打开一个客户端/观战窗口(仅本地)   |
 
 生成的玩家是真实 TCP 客户端,所以也会出现在每个客户端的地图上。
 
+### 使用教程
+
+最省事:浏览器打开 `http://localhost:8080/` 点按钮。或者用 HTTP 调:
+
 ```bash
-# 生成一个并拿到 id,再把坐标推给它
-curl -s -X POST localhost:8080/api/spawn -d '{"count":1,"x":128,"y":128}'   # -> {"spawned":1,"ids":[3]}
-curl -X POST localhost:8080/api/move -d '{"id":3,"x":50,"y":60}'
-curl localhost:8080/api/players
+# 1) 在精确坐标生成一个玩家,响应里给出它的 id
+curl -s -X POST localhost:8080/api/spawn -d '{"count":1,"x":128,"y":128}'
+#    -> {"spawned":1,"ids":[3]}
+
+# 2) 把新坐标推给这个玩家
+curl -s -X POST localhost:8080/api/move -d '{"id":3,"x":50,"y":60}'
+
+# 3) 查看世界 / 实时指标
+curl -s localhost:8080/api/players
+curl -s localhost:8080/api/metrics
+
+# 4) 制造负载,再看指标
+curl -s -X POST localhost:8080/api/loadtest -d '{"count":200}'
+
+# 5) 关掉 AOI(退回全场广播)看带宽飙升;运行时改帧率
+curl -s -X POST localhost:8080/api/aoi   -d '{"enabled":false}'
+curl -s -X POST localhost:8080/api/rates -d '{"tickHz":64,"aoiHz":64,"allHz":16}'
+
+# 6) 清空世界
+curl -s -X POST localhost:8080/api/clear
 ```
+
+> **Windows PowerShell** 里 `curl` 是 `Invoke-WebRequest` 的别名、不认这些参数。请用 `curl.exe`,或 `Invoke-RestMethod`:
+> ```powershell
+> Invoke-RestMethod -Uri http://localhost:8080/api/spawn -Method Post `
+>   -ContentType application/json -Body '{"count":1,"x":128,"y":128}'
+> ```
 
 ## 性能
 
