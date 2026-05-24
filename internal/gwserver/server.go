@@ -26,7 +26,7 @@ import (
 // Server 是分布式网关。
 type Server struct {
 	inbound  chan gateway.Inbound
-	upstream chan *pb.GatewayEvent             // 上行事件队列(串行发送,避免并发 Send 流)
+	upstream chan *pb.GatewayEvent // 上行事件队列(串行发送,避免并发 Send 流)
 	stream   grpc.BidiStreamingClient[pb.GatewayEvent, pb.SceneEvent]
 
 	mu     sync.RWMutex
@@ -108,7 +108,8 @@ func (s *Server) sendLoop() {
 	}
 }
 
-// recvLoop 读场景下行事件,按 target_player_id 路由到对应连接。
+// recvLoop 读场景下行事件:广播事件(TargetPlayerId==BroadcastTarget)编码一次扇出给所有连接;
+// 其余按 target_player_id 路由到对应连接。
 func (s *Server) recvLoop() {
 	for {
 		ev, err := s.stream.Recv()
@@ -116,8 +117,20 @@ func (s *Server) recvLoop() {
 			log.Printf("gateway: downstream recv ended: %v", err)
 			return
 		}
+		if ev.GetTargetPlayerId() == config.BroadcastTarget {
+			// 全局快照对所有人一致:只编码一次,同一个包复用扇出。
+			packet, err := protocol.Encode(uint16(ev.GetMsgType()), ev.GetPayload())
+			if err != nil {
+				continue
+			}
+			s.broadcast(packet)
+			continue
+		}
 		c := s.connByPlayer(ev.GetTargetPlayerId())
 		if c == nil {
+			continue
+		}
+		if c.Backlogged() { // 已积压:跳过,不浪费 CPU 编码一条大概率被丢弃的帧
 			continue
 		}
 		packet, err := protocol.Encode(uint16(ev.GetMsgType()), ev.GetPayload())
@@ -126,6 +139,17 @@ func (s *Server) recvLoop() {
 		}
 		c.Send(packet)
 	}
+}
+
+// broadcast 把同一个已编码的包发给当前所有连接。
+// packet 只读共享给多条连接(各自的 writeloop 只 Write 不改),安全;
+// 某条连接缓冲满时 Send 自行丢帧,不影响其他人。
+func (s *Server) broadcast(packet []byte) {
+	s.mu.RLock()
+	for _, c := range s.conns {
+		c.Send(packet)
+	}
+	s.mu.RUnlock()
 }
 
 func (s *Server) logicLoop() {

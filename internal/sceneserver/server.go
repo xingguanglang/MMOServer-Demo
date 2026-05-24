@@ -80,11 +80,10 @@ func (s *Server) SyncAll(states []scene.PlayerState) {
 	if out == nil {
 		return
 	}
-	for _, st := range states {
-		select {
-		case out <- &pb.SceneEvent{TargetPlayerId: st.ID, MsgType: msgMinimapSync, Payload: payload}:
-		default:
-		}
+	// 全局快照对所有人一致:发一条广播事件,gRPC 只传一次,网关侧编码一次复用扇出。
+	select {
+	case out <- &pb.SceneEvent{TargetPlayerId: config.BroadcastTarget, MsgType: msgMinimapSync, Payload: payload}:
+	default: // 下行积压,丢弃(状态同步容忍丢帧)
 	}
 }
 

@@ -7,12 +7,12 @@ package config
 const (
 	TickHz = 30 // 逻辑帧率(每秒 tick 数)
 	AOIHz  = 10 // 给玩家的 AOI 状态同步频率(每秒,看清附近)
-	AllHz  = 5  // 全场快照频率(每秒):给玩家画小地图、给观战者看全局
+	AllHz  = 3  // 全场快照频率(每秒):给玩家画小地图、给观战者看全局
 
 	MapMinX  = 0   // 地图左边界
 	MapMinY  = 0   // 地图下边界
-	MapMaxX  = 256 // 地图右边界
-	MapMaxY  = 256 // 地图上边界
+	MapMaxX  = 512 // 地图右边界
+	MapMaxY  = 512 // 地图上边界
 	CellSize = 32  // AOI 格子边长(约等于视野半径)
 )
 
@@ -37,3 +37,8 @@ const (
 	HTTPAddr  = ":8080" // HTTP 控制 API
 	SceneAddr = ":9100" // 场景 gRPC
 )
+
+// BroadcastTarget 是 SceneEvent.TargetPlayerId 的哨兵值:等于它表示"广播给所有连接"。
+// 网关只编码一次、复用同一个包扇出给全部连接(全局快照对所有人字节一致)。
+// 合法玩家 ID 从 1 起(连接 ID 自增,0 永不分配),故 0 可安全作哨兵。
+const BroadcastTarget int64 = 0

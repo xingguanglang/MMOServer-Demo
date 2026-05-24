@@ -21,13 +21,15 @@ type Conn struct {
 	sendCh    chan []byte
 }
 
+const sendBufSize = 64 // 发送缓冲帧数;满了就丢帧(状态同步容忍丢帧)
+
 func NewConn(id uint64, raw net.Conn, inbound chan<- Inbound) *Conn {
 	return &Conn{
 		id:      id,
 		raw:     raw,
 		done:    make(chan struct{}),
 		inbound: inbound,
-		sendCh:  make(chan []byte, 64), // 64 条消息的发送缓冲
+		sendCh:  make(chan []byte, sendBufSize),
 	}
 }
 func (c *Conn) ID() uint64 {
@@ -77,9 +79,14 @@ func (c *Conn) writeloop() {
 		}
 	}
 }
+func (c *Conn) Backlogged() bool {
+	return len(c.sendCh) >= sendBufSize*3/4
+}
 func (c *Conn) Send(data []byte) {
 	select {
 	case c.sendCh <- data:
-	case <-c.done:
+	default:
+		// 发送缓冲满:丢弃这一帧,绝不阻塞调用方。
+		// 单个慢连接不能拖垮全局下行路由;状态同步容忍丢帧。
 	}
 }
